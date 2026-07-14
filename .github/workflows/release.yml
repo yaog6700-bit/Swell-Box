@@ -95,15 +95,20 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libgtk-3-dev libayatana-appindicator3-dev
 
-      - name: Embed Windows icon
+      - name: Embed Windows icon + DPI manifest
         if: matrix.goos == 'windows'
         shell: pwsh
         run: |
           go install github.com/akavel/rsrc@latest
           $rsrc = Join-Path (go env GOPATH) "bin\rsrc.exe"
           $arch = "${{ matrix.goarch }}"
-          if (Test-Path .\internal\seed\app.ico) {
-            & $rsrc -ico .\internal\seed\app.ico -arch $arch -o ".\cmd\swellbox\rsrc_windows_${arch}.syso"
+          $ico = ".\internal\seed\app.ico"
+          if (-not (Test-Path $ico)) { $ico = ".\internal\seed\logo.ico" }
+          $manifest = ".\cmd\swellbox\app.manifest"
+          if ((Test-Path $ico) -and (Test-Path $manifest)) {
+            & $rsrc -manifest $manifest -ico $ico -arch $arch -o ".\cmd\swellbox\rsrc_windows_${arch}.syso"
+          } elseif (Test-Path $ico) {
+            & $rsrc -ico $ico -arch $arch -o ".\cmd\swellbox\rsrc_windows_${arch}.syso"
           }
 
       - name: Build SWELL Box

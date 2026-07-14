@@ -17,6 +17,8 @@ import (
 
 func main() {
 	runtime.LockOSThread()
+	// Windows HiDPI: must run before any UI so tray menus render crisp (not bitmap-scaled).
+	app.EnableDPIAwareness()
 
 	if err := app.BootstrapDataDir(seed.DefaultConfig, seed.IconOnPNG, app.RuleSetFiles{
 		GeositeCN: seed.GeositeCNSRS,

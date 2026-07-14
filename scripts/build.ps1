@@ -22,7 +22,13 @@ if (Test-Path $rsrc) {
     Remove-Item ".\cmd\swellbox\rsrc.syso" -Force -ErrorAction SilentlyContinue
     $ico = ".\internal\seed\app.ico"
     if (-not (Test-Path $ico)) { $ico = ".\internal\seed\logo.ico" }
-    & $rsrc -ico $ico -arch $Arch -o ".\cmd\swellbox\rsrc_windows_$Arch.syso"
+    $manifest = ".\cmd\swellbox\app.manifest"
+    # Embed icon + DPI-aware manifest (sharp tray menus on scaled displays)
+    if (Test-Path $manifest) {
+        & $rsrc -manifest $manifest -ico $ico -arch $Arch -o ".\cmd\swellbox\rsrc_windows_$Arch.syso"
+    } else {
+        & $rsrc -ico $ico -arch $Arch -o ".\cmd\swellbox\rsrc_windows_$Arch.syso"
+    }
 }
 
 go mod tidy
