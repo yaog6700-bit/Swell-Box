@@ -1,0 +1,22 @@
+# Build
+/dist/
+/build/
+/bin/
+*.exe
+*.syso
+swellbox
+swellbox.exe
+
+# IDE / OS
+.idea/
+.vscode/
+*.swp
+.DS_Store
+Thumbs.db
+
+# Local runtime (user data lives in ~/.swellbox)
+/tmp/
+*.log
+
+# Downloaded core (optional local cache)
+/third_party/sing-box*

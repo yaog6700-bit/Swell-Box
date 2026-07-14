@@ -1,0 +1,876 @@
+package tray
+
+import (
+	"fmt"
+	"log"
+	"os"
+	"path/filepath"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/getlantern/systray"
+
+	"github.com/swell-app/swellbox/internal/app"
+	"github.com/swell-app/swellbox/internal/autostart"
+	"github.com/swell-app/swellbox/internal/config"
+	"github.com/swell-app/swellbox/internal/core"
+	"github.com/swell-app/swellbox/internal/i18n"
+	"github.com/swell-app/swellbox/internal/notify"
+	"github.com/swell-app/swellbox/internal/paths"
+	"github.com/swell-app/swellbox/internal/sharelink"
+	"github.com/swell-app/swellbox/internal/subscribe"
+	"github.com/swell-app/swellbox/internal/sysproxy"
+	"github.com/swell-app/swellbox/internal/update"
+	"github.com/swell-app/swellbox/internal/watch"
+)
+
+// Icons holds tray icon bytes.
+type Icons struct {
+	On  []byte
+	Off []byte
+}
+
+// Controller wires tray UI to core manager.
+type Controller struct {
+	Icons Icons
+	Core  *core.Manager
+	App   *config.AppSettings
+
+	mu           sync.Mutex
+	mProxy       *systray.MenuItem
+	mRestart     *systray.MenuItem
+	mDashboard   *systray.MenuItem
+	mStatus      *systray.MenuItem
+	// Group parents (top-level)
+	mAdd      *systray.MenuItem
+	mSettings *systray.MenuItem
+	mTools    *systray.MenuItem
+	mNodes    *systray.MenuItem
+
+	mImport        *systray.MenuItem
+	mSubscribe     *systray.MenuItem
+	mUpdateSubs    *systray.MenuItem
+	mImportConfig  *systray.MenuItem
+	mAutostart     *systray.MenuItem
+	mAutoProxy     *systray.MenuItem
+	mSysProxy      *systray.MenuItem
+	mConfigs       *systray.MenuItem
+	mOpenDir       *systray.MenuItem
+	mOpenLog       *systray.MenuItem
+	mUpdate        *systray.MenuItem
+	mUpdateCore    *systray.MenuItem
+	mUpdateCorePre *systray.MenuItem
+	mUpdateGeo     *systray.MenuItem
+	mUpdateApp     *systray.MenuItem
+	mLang          *systray.MenuItem
+	mLangZH        *systray.MenuItem
+	mLangEN        *systray.MenuItem
+	mAbout         *systray.MenuItem
+	mQuit          *systray.MenuItem
+	configItems    []*systray.MenuItem
+	configNames    []string
+
+	// Dynamic node slots
+	nodeSlots   []*systray.MenuItem
+	nodeTags    []string
+	mNodesEmpty *systray.MenuItem
+	selectorTag string
+
+	// Config file watcher
+	cfgWatch       *watch.ConfigWatcher
+	suppressReload time.Time
+}
+
+func (c *Controller) Run() {
+	if c.App != nil {
+		i18n.Set(i18n.Lang(c.App.Language))
+	}
+	systray.Run(c.onReady, c.onExit)
+}
+
+func (c *Controller) onReady() {
+	systray.SetTitle(paths.AppName)
+	systray.SetTooltip(i18n.T("tooltip_stopped"))
+	// Match original SingBoxClient: TemplateIcon + Icon for clear off/on colors.
+	c.applyTrayIcon(false)
+
+	// —— 主菜单保持精简 ——
+	c.mStatus = systray.AddMenuItem(i18n.T("status_stopped"), "")
+	c.mStatus.Disable()
+
+	c.mProxy = systray.AddMenuItem(i18n.T("start"), "")
+	c.mRestart = systray.AddMenuItem(i18n.T("restart"), "")
+	c.mRestart.Hide()
+	c.mDashboard = systray.AddMenuItem(i18n.T("dashboard"), "")
+
+	systray.AddSeparator()
+
+	// 节点 ▸ 当前代理组（动态）
+	c.initNodeSlots()
+
+	// 添加 ▸ 节点 / 订阅 / 配置文件
+	c.mAdd = systray.AddMenuItem(i18n.T("menu_add"), "")
+	c.mImport = c.mAdd.AddSubMenuItem(i18n.T("import_clipboard"), "")
+	c.mSubscribe = c.mAdd.AddSubMenuItem(i18n.T("import_subscribe"), "")
+	c.mUpdateSubs = c.mAdd.AddSubMenuItem(i18n.T("update_subs"), "")
+	c.mImportConfig = c.mAdd.AddSubMenuItem(i18n.T("import_config"), "")
+
+	// 配置文件 ▸ 多配置切换
+	c.mConfigs = systray.AddMenuItem(i18n.T("configs"), "")
+	c.rebuildConfigMenu(c.mConfigs)
+
+	// 设置 ▸ 自启 / 代理 / 语言
+	c.mSettings = systray.AddMenuItem(i18n.T("menu_settings"), "")
+	c.mAutostart = c.mSettings.AddSubMenuItemCheckbox(i18n.T("autostart"), "", autostart.Enabled())
+	c.mAutoProxy = c.mSettings.AddSubMenuItemCheckbox(i18n.T("auto_proxy"), "", c.App != nil && c.App.AutoStartProxy)
+	c.mSysProxy = c.mSettings.AddSubMenuItemCheckbox(i18n.T("system_proxy"), "", c.App != nil && c.App.SystemProxy)
+	c.mLang = c.mSettings.AddSubMenuItem(i18n.T("language"), "")
+	c.mLangZH = c.mLang.AddSubMenuItemCheckbox(i18n.T("lang_zh"), "", i18n.Get() == i18n.ZH)
+	c.mLangEN = c.mLang.AddSubMenuItemCheckbox(i18n.T("lang_en"), "", i18n.Get() == i18n.EN)
+
+	// 检查更新 ▸
+	c.mUpdate = systray.AddMenuItem(i18n.T("update"), "")
+	c.mUpdateCore = c.mUpdate.AddSubMenuItem(i18n.T("update_core_stable"), "")
+	c.mUpdateCorePre = c.mUpdate.AddSubMenuItem(i18n.T("update_core_pre"), "")
+	c.mUpdateGeo = c.mUpdate.AddSubMenuItem(i18n.T("update_geo"), "")
+	c.mUpdateApp = c.mUpdate.AddSubMenuItem(i18n.T("update_app"), "")
+
+	// 工具 ▸ 数据目录 / 日志
+	c.mTools = systray.AddMenuItem(i18n.T("menu_tools"), "")
+	c.mOpenDir = c.mTools.AddSubMenuItem(i18n.T("open_data"), "")
+	c.mOpenLog = c.mTools.AddSubMenuItem(i18n.T("open_log"), "")
+
+	systray.AddSeparator()
+	c.mAbout = systray.AddMenuItem(i18n.T("about"), "")
+	c.mQuit = systray.AddMenuItem(i18n.T("quit"), "")
+
+	go c.loop()
+
+	notify.Info(paths.AppName, i18n.T("app_running"))
+
+	// One-app experience: auto-fetch core on first run if missing.
+	go c.ensureCoreAsync()
+
+	// Watch active config for save → auto reload
+	c.startConfigWatch()
+	c.refreshNodeMenu()
+
+	if c.App != nil && c.App.AutoStartProxy {
+		go func() {
+			time.Sleep(800 * time.Millisecond)
+			if err := c.startProxy(); err != nil {
+				log.Println("auto start:", err)
+				c.setStatus(false, err.Error())
+				notify.Error(paths.AppName, i18n.T("start_failed")+err.Error())
+			} else {
+				notify.Info(paths.AppName, i18n.T("started"))
+			}
+		}()
+	}
+}
+
+func (c *Controller) loop() {
+	for {
+		select {
+		case <-c.mProxy.ClickedCh:
+			if c.Core.Running() {
+				if err := c.stopProxy(); err != nil {
+					notify.Error(paths.AppName, i18n.T("stop_failed")+err.Error())
+				} else {
+					notify.Info(paths.AppName, i18n.T("stopped"))
+				}
+			} else {
+				notify.Info(paths.AppName, i18n.T("starting"))
+				if err := c.startProxy(); err != nil {
+					c.setStatus(false, err.Error())
+					notify.Error(paths.AppName, i18n.T("start_failed")+err.Error())
+				} else {
+					notify.Info(paths.AppName, i18n.T("started"))
+				}
+			}
+		case <-c.mRestart.ClickedCh:
+			notify.Info(paths.AppName, i18n.T("restarting"))
+			_ = c.stopProxy()
+			if err := c.startProxy(); err != nil {
+				c.setStatus(false, err.Error())
+				notify.Error(paths.AppName, i18n.T("restart_failed")+err.Error())
+			} else {
+				notify.Info(paths.AppName, i18n.T("restarted"))
+			}
+		case <-c.mDashboard.ClickedCh:
+			url := paths.DashboardURL(c.App.DashboardPort)
+			if err := app.OpenURL(url); err != nil {
+				go popup(paths.AppName, i18n.T("open_browser_fail")+url)
+			}
+		case <-c.mImport.ClickedCh:
+			c.importFromClipboard()
+		case <-c.mSubscribe.ClickedCh:
+			c.importSubscription()
+		case <-c.mUpdateSubs.ClickedCh:
+			go c.updateSavedSubscriptions()
+		case <-c.mImportConfig.ClickedCh:
+			c.importConfigFile()
+		case <-c.mAutostart.ClickedCh:
+			c.toggleAutostart()
+		case <-c.mAutoProxy.ClickedCh:
+			c.toggleAutoProxy()
+		case <-c.mSysProxy.ClickedCh:
+			c.toggleSysProxy()
+		case <-c.mOpenDir.ClickedCh:
+			if dir, err := paths.HomeDir(); err == nil {
+				_ = app.OpenPath(dir)
+			}
+		case <-c.mOpenLog.ClickedCh:
+			if dir, err := paths.LogsDir(); err == nil {
+				_ = app.OpenPath(filepath.Join(dir, "core.log"))
+			}
+		case <-c.mUpdateCore.ClickedCh:
+			go c.doUpdateCore(update.ChannelStable)
+		case <-c.mUpdateCorePre.ClickedCh:
+			go c.doUpdateCore(update.ChannelPre)
+		case <-c.mUpdateGeo.ClickedCh:
+			go c.doUpdateGeo()
+		case <-c.mUpdateApp.ClickedCh:
+			go c.doCheckApp()
+		case <-c.mLangZH.ClickedCh:
+			c.switchLang(i18n.ZH)
+		case <-c.mLangEN.ClickedCh:
+			c.switchLang(i18n.EN)
+		case <-c.mAbout.ClickedCh:
+			_ = app.OpenURL("https://github.com/SagerNet/sing-box")
+		case <-c.mQuit.ClickedCh:
+			go func() {
+				c.shutdown()
+				systray.Quit()
+				time.AfterFunc(500*time.Millisecond, func() { os.Exit(0) })
+			}()
+			return
+		case <-c.mConfigs.ClickedCh:
+		case <-c.mUpdate.ClickedCh:
+		case <-c.mLang.ClickedCh:
+		case <-c.mAdd.ClickedCh:
+		case <-c.mSettings.ClickedCh:
+		case <-c.mTools.ClickedCh:
+		case <-c.mNodes.ClickedCh:
+			// refresh when user opens nodes menu (best-effort)
+			c.refreshNodeMenu()
+		}
+	}
+}
+
+func (c *Controller) startConfigWatch() {
+	w, err := watch.New(func() {
+		c.onConfigFileChanged()
+	})
+	if err != nil {
+		log.Println("watch:", err)
+		return
+	}
+	c.cfgWatch = w
+	c.cfgWatch.Start()
+	c.rewatchActiveConfig()
+}
+
+func (c *Controller) rewatchActiveConfig() {
+	if c.cfgWatch == nil || c.App == nil {
+		return
+	}
+	path, err := config.ActiveConfigPath(c.App)
+	if err != nil {
+		return
+	}
+	_ = c.cfgWatch.SetPath(path)
+}
+
+func (c *Controller) suppressConfigWatch(d time.Duration) {
+	c.suppressReload = time.Now().Add(d)
+}
+
+func (c *Controller) onConfigFileChanged() {
+	if time.Now().Before(c.suppressReload) {
+		return
+	}
+	if c.Core == nil || !c.Core.Running() {
+		c.refreshNodeMenu()
+		return
+	}
+	// Reload proxy with new config
+	c.suppressConfigWatch(2 * time.Second)
+	_ = c.stopProxy()
+	if err := c.startProxy(); err != nil {
+		notify.Error(paths.AppName, i18n.T("config_reload_fail")+err.Error())
+		return
+	}
+	notify.Info(paths.AppName, i18n.T("config_reloaded"))
+	c.refreshNodeMenu()
+}
+
+func (c *Controller) toggleAutostart() {
+	on := !autostart.Enabled()
+	if err := autostart.Set(on); err != nil {
+		notify.Error(paths.AppName, i18n.T("autostart_fail")+err.Error())
+		if autostart.Enabled() {
+			c.mAutostart.Check()
+		} else {
+			c.mAutostart.Uncheck()
+		}
+		return
+	}
+	if on {
+		c.mAutostart.Check()
+		notify.Info(paths.AppName, i18n.T("autostart_on"))
+	} else {
+		c.mAutostart.Uncheck()
+		notify.Info(paths.AppName, i18n.T("autostart_off"))
+	}
+}
+
+func (c *Controller) toggleAutoProxy() {
+	if c.App == nil {
+		return
+	}
+	c.App.AutoStartProxy = !c.App.AutoStartProxy
+	_ = config.SaveAppSettings(c.App)
+	if c.App.AutoStartProxy {
+		c.mAutoProxy.Check()
+		notify.Info(paths.AppName, i18n.T("auto_proxy_on"))
+	} else {
+		c.mAutoProxy.Uncheck()
+		notify.Info(paths.AppName, i18n.T("auto_proxy_off"))
+	}
+}
+
+func (c *Controller) toggleSysProxy() {
+	if c.App == nil {
+		return
+	}
+	c.App.SystemProxy = !c.App.SystemProxy
+	_ = config.SaveAppSettings(c.App)
+	if c.App.SystemProxy {
+		c.mSysProxy.Check()
+		if c.Core.Running() {
+			if err := sysproxy.Enable(c.proxyAddr()); err != nil {
+				notify.Error(paths.AppName, i18n.T("sysproxy_fail")+err.Error())
+				return
+			}
+		}
+		notify.Info(paths.AppName, i18n.T("sysproxy_on"))
+	} else {
+		c.mSysProxy.Uncheck()
+		_ = sysproxy.Restore()
+		notify.Info(paths.AppName, i18n.T("sysproxy_off"))
+	}
+}
+
+func (c *Controller) proxyAddr() string {
+	// Default mixed inbound in our seed config.
+	return "127.0.0.1:7890"
+}
+
+func (c *Controller) coreChannel() string {
+	if c.App != nil && c.App.CoreChannel == update.ChannelStable {
+		return update.ChannelStable
+	}
+	return update.ChannelPre
+}
+
+func (c *Controller) ensureCoreAsync() {
+	if update.CorePresent() {
+		return
+	}
+	notify.Info(paths.AppName, i18n.T("core_missing"))
+	ver, err := update.EnsureCore(c.coreChannel(), nil)
+	if err != nil {
+		notify.Error(paths.AppName, i18n.T("core_download_fail")+err.Error())
+		return
+	}
+	notify.Info(paths.AppName, fmt.Sprintf(i18n.T("core_ready"), ver))
+}
+
+func (c *Controller) ensureCoreSync() error {
+	if update.CorePresent() {
+		return nil
+	}
+	notify.Info(paths.AppName, i18n.T("core_missing"))
+	ver, err := update.EnsureCore(c.coreChannel(), nil)
+	if err != nil {
+		return err
+	}
+	notify.Info(paths.AppName, fmt.Sprintf(i18n.T("core_ready"), ver))
+	return nil
+}
+
+func (c *Controller) applySystemProxy(on bool) {
+	if c.App == nil || !c.App.SystemProxy {
+		if !on {
+			_ = sysproxy.Restore()
+		}
+		return
+	}
+	if on {
+		_ = sysproxy.Enable(c.proxyAddr())
+	} else {
+		_ = sysproxy.Restore()
+	}
+}
+
+func (c *Controller) shutdown() {
+	_ = c.stopProxy()
+	_ = sysproxy.Restore()
+}
+
+func (c *Controller) importConfigFile() {
+	path, err := app.PickJSONFile(i18n.T("import_config_title"))
+	if err != nil {
+		notify.Error(paths.AppName, i18n.T("cfg_import_fail")+err.Error())
+		return
+	}
+	if strings.TrimSpace(path) == "" {
+		notify.Info(paths.AppName, i18n.T("cfg_import_cancel"))
+		return
+	}
+	c.suppressConfigWatch(3 * time.Second)
+	name, err := config.ImportConfigFile(c.App, path)
+	if err != nil {
+		notify.Error(paths.AppName, i18n.T("cfg_import_fail")+err.Error())
+		return
+	}
+	c.rewatchActiveConfig()
+	c.refreshNodeMenu()
+	msg := fmt.Sprintf(i18n.T("cfg_import_ok"), name)
+	if c.Core.Running() {
+		_ = c.stopProxy()
+		if err := c.startProxy(); err != nil {
+			notify.Error(paths.AppName, msg+" — "+err.Error())
+			return
+		}
+		notify.Info(paths.AppName, msg+i18n.T("imported_restart"))
+		return
+	}
+	notify.Info(paths.AppName, msg+i18n.T("imported_start"))
+}
+
+func (c *Controller) importSubscription() {
+	text, err := sharelink.ReadClipboard()
+	if err != nil {
+		notify.Error(paths.AppName, i18n.T("import_empty"))
+		return
+	}
+	text = strings.TrimSpace(text)
+	notify.Info(paths.AppName, i18n.T("sub_importing"))
+	nodes, err := subscribe.FetchURL(text)
+	if err != nil {
+		if nodes2, err2 := subscribe.ParseBody(text); err2 == nil {
+			nodes = nodes2
+		} else {
+			notify.Error(paths.AppName, i18n.T("sub_failed")+err.Error())
+			return
+		}
+	} else {
+		// Save URL for later one-click update
+		if s, err := config.AddSubscription(text); err == nil {
+			notify.Info(paths.AppName, i18n.T("sub_saved")+s.Name)
+		}
+	}
+	c.applyImportedNodes(nodes)
+}
+
+func (c *Controller) updateSavedSubscriptions() {
+	items, err := config.LoadSubscriptions()
+	if err != nil || len(items) == 0 {
+		notify.Info(paths.AppName, i18n.T("sub_none"))
+		return
+	}
+	notify.Info(paths.AppName, i18n.T("sub_importing"))
+	var all []sharelink.Node
+	for _, it := range items {
+		nodes, err := subscribe.FetchURL(it.URL)
+		if err != nil {
+			log.Println("sub update", it.URL, err)
+			continue
+		}
+		all = append(all, nodes...)
+	}
+	if len(all) == 0 {
+		notify.Error(paths.AppName, i18n.T("sub_failed")+"no nodes")
+		return
+	}
+	c.applyImportedNodes(all)
+	notify.Info(paths.AppName, fmt.Sprintf(i18n.T("sub_updated"), len(all)))
+}
+
+func (c *Controller) applyImportedNodes(nodes []sharelink.Node) {
+	c.suppressConfigWatch(3 * time.Second)
+	tags, err := config.AddNodesToActiveConfig(c.App, nodes)
+	if err != nil {
+		notify.Error(paths.AppName, i18n.T("save_failed")+err.Error())
+		return
+	}
+	msg := fmt.Sprintf(i18n.T("sub_ok"), len(tags))
+	if c.Core.Running() {
+		_ = c.stopProxy()
+		if err := c.startProxy(); err != nil {
+			notify.Error(paths.AppName, msg)
+			return
+		}
+		notify.Info(paths.AppName, msg+i18n.T("imported_restart"))
+	} else {
+		notify.Info(paths.AppName, msg+i18n.T("imported_start"))
+	}
+	c.refreshNodeMenu()
+}
+
+func (c *Controller) doUpdateCore(channel string) {
+	notify.Info(paths.AppName, i18n.T("upd_checking"))
+	info, err := update.CheckCore(channel)
+	if err != nil {
+		notify.Error(paths.AppName, i18n.T("upd_core_fail")+err.Error())
+		return
+	}
+	cur := info.Installed
+	if cur == "" {
+		cur = "?"
+	}
+	// Same version string → skip (allows switching stable↔pre when tags differ).
+	if info.Latest != "" && cur == info.Latest {
+		notify.Info(paths.AppName, fmt.Sprintf(i18n.T("upd_core_latest"), cur))
+		return
+	}
+	notify.Info(paths.AppName, fmt.Sprintf(i18n.T("upd_core_avail"), info.Latest, cur))
+	ver, err := update.UpdateCore(channel, func() error {
+		return c.stopProxy()
+	})
+	if err != nil {
+		notify.Error(paths.AppName, i18n.T("upd_core_fail")+err.Error())
+		return
+	}
+	notify.Info(paths.AppName, fmt.Sprintf(i18n.T("upd_core_ok"), ver))
+}
+
+func (c *Controller) doUpdateGeo() {
+	notify.Info(paths.AppName, i18n.T("upd_geo_start"))
+	if err := update.UpdateGeoRules(); err != nil {
+		notify.Error(paths.AppName, i18n.T("upd_geo_fail")+err.Error())
+		return
+	}
+	// Reload proxy so new rule-sets take effect if running.
+	if c.Core != nil && c.Core.Running() {
+		c.suppressConfigWatch(2 * time.Second)
+		_ = c.stopProxy()
+		if err := c.startProxy(); err != nil {
+			notify.Info(paths.AppName, i18n.T("upd_geo_ok"))
+			notify.Error(paths.AppName, i18n.T("start_failed")+err.Error())
+			return
+		}
+	}
+	notify.Info(paths.AppName, i18n.T("upd_geo_ok"))
+}
+
+func (c *Controller) doCheckApp() {
+	notify.Info(paths.AppName, i18n.T("upd_checking"))
+	res := update.CheckApp()
+	if res.Message == "manual" || update.AppReleaseRepo == "" {
+		notify.Info(paths.AppName, fmt.Sprintf(i18n.T("upd_app_manual"), res.Current))
+		return
+	}
+	if res.HasUpdate {
+		notify.Info(paths.AppName, fmt.Sprintf(i18n.T("upd_app_avail"), res.Latest))
+		if res.DownloadURL != "" {
+			_ = app.OpenURL(res.DownloadURL)
+		} else if update.AppReleaseRepo != "" {
+			_ = app.OpenURL("https://github.com/" + update.AppReleaseRepo + "/releases")
+		}
+		return
+	}
+	if res.Latest != "" {
+		notify.Info(paths.AppName, fmt.Sprintf(i18n.T("upd_app_latest"), res.Current))
+		return
+	}
+	notify.Info(paths.AppName, fmt.Sprintf(i18n.T("upd_app_ver"), res.Current))
+}
+
+// local helper to avoid exporting versionLess from update with wrong name
+func updateVersionLess(a, b string) bool {
+	return update.VersionLess(a, b)
+}
+
+func (c *Controller) switchLang(lang i18n.Lang) {
+	i18n.Set(lang)
+	if c.App != nil {
+		c.App.Language = string(lang)
+		_ = config.SaveAppSettings(c.App)
+	}
+	c.applyMenuLanguage()
+	if lang == i18n.ZH {
+		c.mLangZH.Check()
+		c.mLangEN.Uncheck()
+		notify.Info(paths.AppName, i18n.T("lang_switched"))
+	} else {
+		c.mLangEN.Check()
+		c.mLangZH.Uncheck()
+		notify.Info(paths.AppName, i18n.T("lang_switched_en"))
+	}
+}
+
+func (c *Controller) applyMenuLanguage() {
+	running := c.Core != nil && c.Core.Running()
+	set := func(m *systray.MenuItem, key string) {
+		if m != nil {
+			m.SetTitle(i18n.T(key))
+		}
+	}
+	if c.mStatus != nil {
+		if running {
+			c.mStatus.SetTitle(i18n.T("status_running"))
+		} else {
+			c.mStatus.SetTitle(i18n.T("status_stopped"))
+		}
+	}
+	if c.mProxy != nil {
+		if running {
+			c.mProxy.SetTitle(i18n.T("stop"))
+		} else {
+			c.mProxy.SetTitle(i18n.T("start"))
+		}
+	}
+	set(c.mRestart, "restart")
+	set(c.mDashboard, "dashboard")
+	set(c.mNodes, "menu_nodes")
+	set(c.mAdd, "menu_add")
+	set(c.mImport, "import_clipboard")
+	set(c.mSubscribe, "import_subscribe")
+	set(c.mUpdateSubs, "update_subs")
+	set(c.mImportConfig, "import_config")
+	set(c.mConfigs, "configs")
+	set(c.mSettings, "menu_settings")
+	set(c.mAutostart, "autostart")
+	set(c.mAutoProxy, "auto_proxy")
+	set(c.mSysProxy, "system_proxy")
+	set(c.mLang, "language")
+	set(c.mLangZH, "lang_zh")
+	set(c.mLangEN, "lang_en")
+	set(c.mUpdate, "update")
+	set(c.mUpdateCore, "update_core_stable")
+	set(c.mUpdateCorePre, "update_core_pre")
+	set(c.mUpdateGeo, "update_geo")
+	set(c.mUpdateApp, "update_app")
+	set(c.mTools, "menu_tools")
+	set(c.mOpenDir, "open_data")
+	set(c.mOpenLog, "open_log")
+	set(c.mAbout, "about")
+	set(c.mQuit, "quit")
+	if running {
+		systray.SetTooltip(i18n.T("tooltip_running"))
+	} else {
+		systray.SetTooltip(i18n.T("tooltip_stopped"))
+	}
+}
+
+func (c *Controller) importFromClipboard() {
+	text, err := sharelink.ReadClipboard()
+	if err != nil {
+		notify.Error(paths.AppName, i18n.T("import_empty"))
+		return
+	}
+	nodes, err := sharelink.Parse(text)
+	if err != nil {
+		notify.Error(paths.AppName, i18n.T("import_failed")+err.Error())
+		return
+	}
+	c.suppressConfigWatch(3 * time.Second)
+	tags, err := config.AddNodesToActiveConfig(c.App, nodes)
+	if err != nil {
+		notify.Error(paths.AppName, i18n.T("save_failed")+err.Error())
+		return
+	}
+	msg := i18n.T("imported") + tags[0]
+	if len(tags) > 1 {
+		msg = fmt.Sprintf(i18n.T("imported_n"), len(tags))
+	}
+	if c.Core.Running() {
+		_ = c.stopProxy()
+		if err := c.startProxy(); err != nil {
+			notify.Error(paths.AppName, msg)
+			return
+		}
+		notify.Info(paths.AppName, msg+i18n.T("imported_restart"))
+	} else {
+		notify.Info(paths.AppName, msg+i18n.T("imported_start"))
+	}
+	c.refreshNodeMenu()
+}
+
+func (c *Controller) rebuildConfigMenu(parent *systray.MenuItem) {
+	names, err := config.ListConfigFiles()
+	if err != nil || len(names) == 0 {
+		item := parent.AddSubMenuItem(i18n.T("no_config"), "")
+		item.Disable()
+		return
+	}
+	c.configNames = names
+	c.configItems = nil
+	for _, name := range names {
+		n := name
+		item := parent.AddSubMenuItemCheckbox(n, n, n == c.App.ActiveConfig)
+		c.configItems = append(c.configItems, item)
+		go func(name string, mi *systray.MenuItem) {
+			for range mi.ClickedCh {
+				c.selectConfig(name)
+				for i, other := range c.configItems {
+					if c.configNames[i] == name {
+						other.Check()
+					} else {
+						other.Uncheck()
+					}
+				}
+			}
+		}(n, item)
+	}
+}
+
+func (c *Controller) selectConfig(name string) {
+	// Open with Notepad for editing, then make it the active config.
+	dir, err := paths.ConfigDir()
+	if err == nil {
+		_ = app.OpenInNotepad(filepath.Join(dir, name))
+	}
+
+	c.App.ActiveConfig = name
+	_ = config.SaveAppSettings(c.App)
+	c.rewatchActiveConfig()
+	c.refreshNodeMenu()
+	if c.Core.Running() {
+		c.suppressConfigWatch(2 * time.Second)
+		_ = c.stopProxy()
+		if err := c.startProxy(); err != nil {
+			log.Println("switch config:", err)
+			c.setStatus(false, err.Error())
+			notify.Error(paths.AppName, i18n.T("start_failed")+err.Error())
+		}
+	}
+}
+
+func (c *Controller) startProxy() error {
+	// Download core outside the lock (network).
+	if err := c.ensureCoreSync(); err != nil {
+		return fmt.Errorf("%s%w", i18n.T("core_download_fail"), err)
+	}
+
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	userCfg, err := config.ActiveConfigPath(c.App)
+	if err != nil {
+		return err
+	}
+	if _, err := os.Stat(userCfg); err != nil {
+		return fmt.Errorf("active config missing: %s", userCfg)
+	}
+
+	runtimePath, err := config.RuntimeConfigPath()
+	if err != nil {
+		return err
+	}
+	if err := config.PrepareRuntimeConfig(userCfg, runtimePath, c.App.DashboardPort); err != nil {
+		return err
+	}
+
+	home, err := paths.HomeDir()
+	if err != nil {
+		return err
+	}
+
+	if c.App != nil {
+		c.Core.CorePath = c.App.CorePath
+	}
+	c.Core.ConfigPath = runtimePath
+	c.Core.WorkDir = home
+
+	if err := c.Core.Start(); err != nil {
+		return err
+	}
+	c.setStatus(true, "")
+	// System proxy after core is up
+	if c.App != nil && c.App.SystemProxy {
+		_ = sysproxy.Enable(c.proxyAddr())
+	}
+	// Allow Clash API a moment then refresh node list
+	go func() {
+		time.Sleep(400 * time.Millisecond)
+		c.refreshNodeMenu()
+	}()
+	return nil
+}
+
+func (c *Controller) stopProxy() error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	err := c.Core.Stop()
+	c.setStatus(false, "")
+	_ = sysproxy.Restore()
+	return err
+}
+
+func (c *Controller) applyTrayIcon(running bool) {
+	// Windows: only SetIcon (full color). Avoid TemplateIcon (can look monochrome).
+	on := c.Icons.On
+	off := c.Icons.Off
+	if len(off) == 0 {
+		off = on
+	}
+	if len(on) == 0 {
+		on = off
+	}
+	icon := off
+	if running {
+		icon = on
+	}
+	if len(icon) == 0 {
+		return
+	}
+	systray.SetIcon(icon)
+}
+
+func (c *Controller) setStatus(running bool, errMsg string) {
+	if running {
+		systray.SetTooltip(i18n.T("tooltip_running"))
+		c.applyTrayIcon(true)
+		if c.mProxy != nil {
+			c.mProxy.SetTitle(i18n.T("stop"))
+		}
+		if c.mRestart != nil {
+			c.mRestart.Show()
+		}
+		if c.mStatus != nil {
+			c.mStatus.SetTitle(i18n.T("status_running"))
+		}
+		return
+	}
+	systray.SetTooltip(i18n.T("tooltip_stopped"))
+	c.applyTrayIcon(false)
+	if c.mProxy != nil {
+		c.mProxy.SetTitle(i18n.T("start"))
+	}
+	if c.mRestart != nil {
+		c.mRestart.Hide()
+	}
+	if c.mStatus != nil {
+		if errMsg != "" {
+			msg := errMsg
+			if len(msg) > 80 {
+				msg = msg[:80] + "…"
+			}
+			c.mStatus.SetTitle(i18n.T("status_error") + msg)
+		} else {
+			c.mStatus.SetTitle(i18n.T("status_stopped"))
+		}
+	}
+}
+
+func (c *Controller) onExit() {
+	if c.cfgWatch != nil {
+		_ = c.cfgWatch.Close()
+	}
+	c.shutdown()
+}
