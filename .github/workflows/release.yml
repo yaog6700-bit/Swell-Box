@@ -1,0 +1,103 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Optional tag to build (e.g. v0.2.1). Leave empty for manual artifact-only build."
+        required: false
+        default: ""
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    name: Build Windows amd64
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.22.x"
+          cache: true
+
+      - name: Version
+        id: ver
+        shell: bash
+        run: |
+          if [[ "${{ github.ref_type }}" == "tag" ]]; then
+            V="${GITHUB_REF_NAME#v}"
+            echo "version=$V" >> "$GITHUB_OUTPUT"
+            echo "tag=$GITHUB_REF_NAME" >> "$GITHUB_OUTPUT"
+          elif [[ -n "${{ inputs.tag }}" ]]; then
+            T="${{ inputs.tag }}"
+            V="${T#v}"
+            echo "version=$V" >> "$GITHUB_OUTPUT"
+            echo "tag=$T" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=0.0.0-dev" >> "$GITHUB_OUTPUT"
+            echo "tag=" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Embed Windows icon (rsrc)
+        shell: pwsh
+        run: |
+          go install github.com/akavel/rsrc@latest
+          $rsrc = Join-Path (go env GOPATH) "bin\rsrc.exe"
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          if (Test-Path .\internal\seed\app.ico) {
+            & $rsrc -ico .\internal\seed\app.ico -arch amd64 -o .\cmd\swellbox\rsrc_windows_amd64.syso
+          }
+
+      - name: Build
+        shell: pwsh
+        run: |
+          $ver = "${{ steps.ver.outputs.version }}"
+          $ld = "-H=windowsgui -s -w -X github.com/swell-app/swellbox/internal/update.AppVersion=$ver"
+          go build -ldflags $ld -o dist/SWELL-Box.exe ./cmd/swellbox
+          Get-Item dist/SWELL-Box.exe | Format-List Name, Length, LastWriteTime
+
+      - name: Zip
+        shell: pwsh
+        run: |
+          Compress-Archive -Path dist/SWELL-Box.exe -DestinationPath dist/SWELL-Box-windows-amd64.zip -Force
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: SWELL-Box-windows-amd64
+          path: |
+            dist/SWELL-Box.exe
+            dist/SWELL-Box-windows-amd64.zip
+          if-no-files-found: error
+
+      - name: Create GitHub Release
+        if: steps.ver.outputs.tag != ''
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.ver.outputs.tag }}
+          name: SWELL Box ${{ steps.ver.outputs.tag }}
+          generate_release_notes: true
+          files: |
+            dist/SWELL-Box.exe
+            dist/SWELL-Box-windows-amd64.zip
+          body: |
+            ## SWELL Box ${{ steps.ver.outputs.tag }}
+
+            ### Downloads
+            - **SWELL-Box.exe** — Windows amd64, no console window
+            - **SWELL-Box-windows-amd64.zip** — same binary, zipped
+
+            ### Notes
+            - Data dir: `%USERPROFILE%\.swellbox`
+            - Core can be auto-downloaded on first run
+            - Geo rules are bundled; update via tray menu when needed
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

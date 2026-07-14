@@ -1,0 +1,26 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    name: Build Windows
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.22.x"
+          cache: true
+
+      - name: Build
+        shell: pwsh
+        run: |
+          go build -ldflags "-H=windowsgui -s -w" -o dist/SWELL-Box.exe ./cmd/swellbox
+          if (-not (Test-Path dist/SWELL-Box.exe)) { exit 1 }
+          Write-Host "OK" (Get-Item dist/SWELL-Box.exe).Length

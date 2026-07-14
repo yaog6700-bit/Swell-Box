@@ -27,24 +27,30 @@ User data: `%USERPROFILE%\.swellbox\`
 
 ## Build
 
+### Local (Windows)
+
 ```powershell
 # Go 1.22+
 cd swellbox
 go mod tidy
-
-# optional: embed Windows icon
-# go install github.com/akavel/rsrc@latest
-# rsrc -ico .\internal\seed\app.ico -arch amd64 -o .\cmd\swellbox\rsrc_windows_amd64.syso
-
-go build -ldflags "-H=windowsgui -s -w" -o dist\SWELL-Box.exe .\cmd\swellbox
-```
-
-Or:
-
-```powershell
 .\scripts\build.ps1
 ```
 
+### GitHub Actions (recommended)
+
+| Workflow | Trigger | Output |
+|----------|---------|--------|
+| **CI** | push / PR to `main` | compile check |
+| **Release** | push tag `v*` | Release assets (`SWELL-Box.exe` + zip) |
+
+Create a release:
+
+```bash
+git tag v0.2.1
+git push origin v0.2.1
+```
+
+Or: **Actions → Release → Run workflow**.
 ## Usage
 
 1. Run `SWELL-Box.exe` (tray icon)
