@@ -32,6 +32,8 @@ func PrepareRuntimeConfig(userConfigPath, runtimePath string, dashboardPort int)
 	ensureCacheFile(root)
 	// Prefer local rule-set files under workdir (offline-first).
 	preferLocalRuleSets(root)
+	// sing-box ≥1.12 rejects detour:"direct" on DNS servers.
+	stripDirectDNSDetour(root)
 
 	out, err := json.MarshalIndent(root, "", "  ")
 	if err != nil {
@@ -121,6 +123,28 @@ func ensureCacheFile(root map[string]any) {
 	}
 	exp["cache_file"] = cf
 	root["experimental"] = exp
+}
+
+// stripDirectDNSDetour removes detour:"direct" from DNS servers.
+// Newer sing-box: "detour to an empty direct outbound makes no sense".
+func stripDirectDNSDetour(root map[string]any) {
+	dns, _ := root["dns"].(map[string]any)
+	if dns == nil {
+		return
+	}
+	servers, _ := dns["servers"].([]any)
+	for i, item := range servers {
+		m, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		if d, _ := m["detour"].(string); d == "direct" {
+			delete(m, "detour")
+			servers[i] = m
+		}
+	}
+	dns["servers"] = servers
+	root["dns"] = dns
 }
 
 // preferLocalRuleSets rewrites known remote CN rule-sets to bundled local paths
