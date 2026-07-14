@@ -50,7 +50,7 @@ func Enable() error {
 		return err
 	}
 
-	// Launch the binary inside the .app (LSUIElement → no Terminal / no Dock)
+	// Launch the binary inside the .app (LSUIElement 鈫?no Terminal / no Dock)
 	body := fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">

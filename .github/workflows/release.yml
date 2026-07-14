@@ -111,7 +111,7 @@ jobs:
             & $rsrc -ico $ico -arch $arch -o ".\cmd\swellbox\rsrc_windows_${arch}.syso"
           }
 
-      - name: Build SWELL Box
+      - name: Build Swell-Box
         shell: bash
         env:
           GOOS: ${{ matrix.goos }}
@@ -125,21 +125,21 @@ jobs:
           if [ "${{ matrix.goos }}" = "windows" ]; then
             LDFLAGS="-H=windowsgui ${LDFLAGS}"
           fi
-          OUT="dist/SWELL-Box${{ matrix.ext }}"
+          OUT="dist/Swell-Box${{ matrix.ext }}"
           go build -ldflags "$LDFLAGS" -o "$OUT" ./cmd/swellbox
           ls -la "$OUT"
 
           if [ "${{ matrix.goos }}" = "darwin" ]; then
             chmod +x scripts/package_macos_app.sh
-            ./scripts/package_macos_app.sh "$OUT" "dist/SWELL Box.app" "$VER"
+            ./scripts/package_macos_app.sh "$OUT" "dist/Swell-Box.app" "$VER"
             # Prefer .app in package; keep raw binary only as build product for debugging
             rm -rf dist/package/*
-            cp -R "dist/SWELL Box.app" dist/package/
+            cp -R "dist/Swell-Box.app" dist/package/
             # Thin client zip = the .app alone
             (
               cd dist
-              ditto -c -k --sequesterRsrc --keepParent "SWELL Box.app" "SWELL-Box-darwin-${{ matrix.goarch }}.zip" \
-                || zip -r "SWELL-Box-darwin-${{ matrix.goarch }}.zip" "SWELL Box.app"
+              ditto -c -k --sequesterRsrc --keepParent "Swell-Box.app" "Swell-Box-darwin-${{ matrix.goarch }}.zip" \
+                || zip -r "Swell-Box-darwin-${{ matrix.goarch }}.zip" "Swell-Box.app"
             )
           else
             cp "$OUT" dist/package/
@@ -159,7 +159,7 @@ jobs:
           set -euo pipefail
           if command -v python3 >/dev/null 2>&1; then PY=python3; else PY=python; fi
           export PLATFORM="${GOOS}-${GOARCH}"
-          export UA="SWELLBox-CI"
+          export UA="Swell-Box-CI"
           mkdir -p dist
 
           gh_api() {
@@ -179,7 +179,7 @@ jobs:
                 echo "GitHub API failed after $n tries: $url" >&2
                 return 1
               fi
-              echo "GitHub API retry $n …" >&2
+              echo "GitHub API retry $n 鈥? >&2
               sleep $((n * 3))
             done
           }
@@ -192,17 +192,17 @@ jobs:
           fi
 
           $PY scripts/ci_bundle_core.py
-          ls -la "dist/SWELL-Box-${PLATFORM}-full.zip" || true
+          ls -la "dist/Swell-Box-${PLATFORM}-full.zip" || true
           ls -la dist/ | head -40
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: SWELL-Box-${{ matrix.goos }}-${{ matrix.goarch }}
+          name: Swell-Box-${{ matrix.goos }}-${{ matrix.goarch }}
           path: |
-            dist/SWELL-Box${{ matrix.ext }}
-            dist/SWELL-Box-${{ matrix.goos }}-${{ matrix.goarch }}.zip
-            dist/SWELL-Box-${{ matrix.goos }}-${{ matrix.goarch }}-full.zip
+            dist/Swell-Box${{ matrix.ext }}
+            dist/Swell-Box-${{ matrix.goos }}-${{ matrix.goarch }}.zip
+            dist/Swell-Box-${{ matrix.goos }}-${{ matrix.goarch }}-full.zip
           if-no-files-found: error
 
   release:
@@ -224,21 +224,21 @@ jobs:
           for d in release-assets/*; do
             [ -d "$d" ] || continue
             base=$(basename "$d")
-            platform=${base#SWELL-Box-}
+            platform=${base#Swell-Box-}
             for f in "$d"/*; do
               [ -f "$f" ] || continue
               name=$(basename "$f")
               if [[ "$name" == *-full.zip ]]; then
                 cp "$f" "out/$name"
-              elif [[ "$name" == SWELL-Box-*-*.zip ]]; then
+              elif [[ "$name" == Swell-Box-*-*.zip ]]; then
                 # thin client zip (e.g. macOS .app zip already platform-tagged)
                 cp "$f" "out/$name"
-              elif [[ "$name" == SWELL-Box.exe ]]; then
-                cp "$f" "out/SWELL-Box-${platform}.exe"
-              elif [[ "$name" == SWELL-Box ]]; then
+              elif [[ "$name" == Swell-Box.exe ]]; then
+                cp "$f" "out/Swell-Box-${platform}.exe"
+              elif [[ "$name" == Swell-Box ]]; then
                 # raw unix binary (linux); macOS prefers the .app zip above
                 if [[ "$platform" != darwin-* ]]; then
-                  cp "$f" "out/SWELL-Box-${platform}"
+                  cp "$f" "out/Swell-Box-${platform}"
                 fi
               else
                 cp "$f" "out/$name"
@@ -251,33 +251,27 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ needs.meta.outputs.tag }}
-          name: SWELL Box ${{ needs.meta.outputs.tag }}
+          name: Swell-Box ${{ needs.meta.outputs.tag }}
           generate_release_notes: true
           files: out/*
           body: |
-            ## SWELL Box ${{ needs.meta.outputs.tag }}
+            ## Swell-Box ${{ needs.meta.outputs.tag }}
 
-            ### 推荐：完整离线包（内核在 zip 内，不单独发布 sing-box）
-
-            | 平台 | 架构 | 文件 |
+            ### 鎺ㄨ崘锛氬畬鏁寸绾垮寘锛堝唴鏍稿湪 zip 鍐咃紝涓嶅崟鐙彂甯?sing-box锛?
+            | 骞冲彴 | 鏋舵瀯 | 鏂囦欢 |
             |------|------|------|
-            | Windows | amd64 | `SWELL-Box-windows-amd64-full.zip` |
-            | Windows | arm64 | `SWELL-Box-windows-arm64-full.zip` |
-            | macOS | arm64 (Apple Silicon) | `SWELL-Box-darwin-arm64-full.zip`（含 `SWELL Box.app`） |
-            | Linux | amd64 | `SWELL-Box-linux-amd64-full.zip` |
-            | Linux | arm64 | `SWELL-Box-linux-arm64-full.zip` |
+            | Windows | amd64 | `Swell-Box-windows-amd64-full.zip` |
+            | Windows | arm64 | `Swell-Box-windows-arm64-full.zip` |
+            | macOS | arm64 (Apple Silicon) | `Swell-Box-darwin-arm64-full.zip`锛堝惈 `Swell-Box.app`锛?|
+            | Linux | amd64 | `Swell-Box-linux-amd64-full.zip` |
+            | Linux | arm64 | `Swell-Box-linux-arm64-full.zip` |
 
-            解压后同目录运行客户端；`sing-box` / `sing-box.exe` 在包内。
+            瑙ｅ帇鍚庡悓鐩綍杩愯瀹㈡埛绔紱`sing-box` / `sing-box.exe` 鍦ㄥ寘鍐呫€?
+            ### 浠呭鎴风锛堝甫骞冲彴鏍囩锛?            - `Swell-Box-windows-amd64.exe` / `Swell-Box-windows-arm64.exe`
+            - `Swell-Box-darwin-arm64.zip` 鈥?macOS **`.app` 鍖?*锛堝甫鍥炬爣锛屾棤缁堢绐楀彛锛?            - `Swell-Box-linux-amd64` / `Swell-Box-linux-arm64`
 
-            ### 仅客户端（带平台标签）
-            - `SWELL-Box-windows-amd64.exe` / `SWELL-Box-windows-arm64.exe`
-            - `SWELL-Box-darwin-arm64.zip` — macOS **`.app` 包**（带图标，无终端窗口）
-            - `SWELL-Box-linux-amd64` / `SWELL-Box-linux-arm64`
-
-            ### 说明
-            - 用户数据：`~/.swellbox`（Windows：`%USERPROFILE%\.swellbox`）
-            - 官方内核**不会**作为独立 Release 附件；只打进 `*-full.zip`
-            - macOS：仅 Apple Silicon；首次打开请右键 → 打开（未签名 Gatekeeper）
-            - macOS 为菜单栏应用（`LSUIElement`），不出现在 Dock，菜单栏只显示图标不显示名称
+            ### 璇存槑
+            - 鐢ㄦ埛鏁版嵁锛歚~/.swellbox`锛圵indows锛歚%USERPROFILE%\.swellbox`锛?            - 瀹樻柟鍐呮牳**涓嶄細**浣滀负鐙珛 Release 闄勪欢锛涘彧鎵撹繘 `*-full.zip`
+            - macOS锛氫粎 Apple Silicon锛涢娆℃墦寮€璇峰彸閿?鈫?鎵撳紑锛堟湭绛惧悕 Gatekeeper锛?            - macOS 涓鸿彍鍗曟爮搴旂敤锛坄LSUIElement`锛夛紝涓嶅嚭鐜板湪 Dock锛岃彍鍗曟爮鍙樉绀哄浘鏍囦笉鏄剧ず鍚嶇О
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

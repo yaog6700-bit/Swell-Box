@@ -37,7 +37,7 @@ func PrepareRuntimeConfig(userConfigPath, runtimePath string, dashboardPort int,
 	ensureCacheFile(root)
 	// Prefer local rule-set files under workdir (offline-first).
 	preferLocalRuleSets(root)
-	// sing-box ≥1.12 rejects detour:"direct" on DNS servers.
+	// sing-box 鈮?.12 rejects detour:"direct" on DNS servers.
 	stripDirectDNSDetour(root)
 	applyTunMode(root, tunMode)
 

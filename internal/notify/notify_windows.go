@@ -8,6 +8,8 @@ import (
 	"sync"
 
 	"github.com/gen2brain/beeep"
+
+	"github.com/swell-app/swellbox/internal/paths"
 )
 
 var (
@@ -32,6 +34,6 @@ func initIcon() {
 
 func show(title, message string, isError bool) {
 	initIcon()
-	beeep.AppName = "SWELL Box"
+	beeep.AppName = paths.AppName
 	_ = beeep.Notify(title, message, iconPNG)
 }

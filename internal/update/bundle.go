@@ -10,10 +10,10 @@ import (
 )
 
 // InstallBundledCore copies sing-box (and sidecars like libcronet.dll) from
-// next to the SWELL Box executable into ~/.swellbox/bin when the data-dir
+// next to the Swell-Box executable into ~/.swellbox/bin when the data-dir
 // core is missing.
 //
-// Layout supported next to SWELL-Box.exe:
+// Layout supported next to Swell-Box.exe:
 //
 //	./sing-box.exe
 //	./libcronet.dll
@@ -55,9 +55,9 @@ func findBundledCore() (string, error) {
 	}
 	dir := filepath.Dir(exe)
 	// Layouts:
-	//   ./sing-box[.exe] next to SWELL-Box
+	//   ./sing-box[.exe] next to Swell-Box
 	//   ./bin/sing-box , ./core/sing-box
-	//   macOS .app: Contents/MacOS/SWELL-Box → also Contents/Resources, and folder next to .app
+	//   macOS .app: Contents/MacOS/Swell-Box → also Contents/Resources, and folder next to .app
 	candidates := []string{
 		filepath.Join(dir, name),
 		filepath.Join(dir, "bin", name),

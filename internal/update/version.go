@@ -1,6 +1,6 @@
-package update
+﻿package update
 
-// AppVersion is the SWELL Box client version (override at build with -ldflags).
+// AppVersion is the Swell-Box client version (override at build with -ldflags).
 var AppVersion = "0.2.5"
 
 // AppReleaseRepo is "owner/repo" for GitHub Releases app updates.

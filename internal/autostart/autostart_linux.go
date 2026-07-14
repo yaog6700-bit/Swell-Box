@@ -1,4 +1,4 @@
-//go:build linux
+﻿//go:build linux
 
 package autostart
 
@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 )
 
-const desktopName = "swellbox.desktop"
+const desktopName = "Swell-Box.desktop"
 
 func desktopPath() (string, error) {
 	home, err := os.UserHomeDir()
@@ -52,8 +52,8 @@ func Enable() error {
 	body := fmt.Sprintf(`[Desktop Entry]
 Type=Application
 Version=1.0
-Name=SWELL Box
-Comment=SWELL Box tray client for sing-box
+Name=Swell-Box
+Comment=Swell-Box tray client for sing-box
 Exec=%s
 Terminal=false
 Categories=Network;

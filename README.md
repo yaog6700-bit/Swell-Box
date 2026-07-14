@@ -1,10 +1,10 @@
-# SWELL Box
+# Swell-Box
 
-**SWELL Box** is a lightweight system-tray client for [sing-box](https://github.com/SagerNet/sing-box).
+**Swell-Box** is a lightweight system-tray client for [sing-box](https://github.com/SagerNet/sing-box).
 
 **Repository:** [github.com/yaog6700-bit/Swell-Box](https://github.com/yaog6700-bit/Swell-Box)
 
-Brand: **SWELL** · Binary: `SWELL-Box` / `SWELL-Box.exe`
+Brand: **Swell** · Binary: `Swell-Box` / `Swell-Box.exe`
 
 > Architecture: **tray shell (Go) + official sing-box binary (subprocess) + official Dashboard**.  
 > Inspired by [daodao97/SingBoxClient](https://github.com/daodao97/SingBoxClient), rewritten without vendoring the core.
@@ -51,9 +51,9 @@ go mod tidy
 
 ```bash
 # examples
-GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -ldflags "-H=windowsgui -s -w" -o dist/SWELL-Box.exe ./cmd/swellbox
-GOOS=darwin  GOARCH=arm64 CGO_ENABLED=1 go build -ldflags "-s -w" -o dist/SWELL-Box ./cmd/swellbox
-GOOS=linux   GOARCH=amd64 CGO_ENABLED=1 go build -ldflags "-s -w" -o dist/SWELL-Box ./cmd/swellbox
+GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -ldflags "-H=windowsgui -s -w" -o dist/Swell-Box.exe ./cmd/swellbox
+GOOS=darwin  GOARCH=arm64 CGO_ENABLED=1 go build -ldflags "-s -w" -o dist/Swell-Box ./cmd/swellbox
+GOOS=linux   GOARCH=amd64 CGO_ENABLED=1 go build -ldflags "-s -w" -o dist/Swell-Box ./cmd/swellbox
 ```
 
 > Linux / macOS tray builds need CGO. On Linux install `libgtk-3-dev` and `libayatana-appindicator3-dev`.
@@ -76,23 +76,23 @@ git push origin v0.2.4
 
 | File | Contents |
 |------|----------|
-| `SWELL-Box-windows-amd64-full.zip` | Win x64 client + `sing-box.exe` |
-| `SWELL-Box-windows-arm64-full.zip` | Win ARM64 client + `sing-box.exe` |
-| `SWELL-Box-darwin-arm64-full.zip` | macOS Apple Silicon **`.app`** + `sing-box`（无终端、带图标） |
-| `SWELL-Box-linux-amd64-full.zip` | Linux x64 + `sing-box` |
-| `SWELL-Box-linux-arm64-full.zip` | Linux ARM64 + `sing-box` |
+| `Swell-Box-windows-amd64-full.zip` | Win x64 client + `sing-box.exe` |
+| `Swell-Box-windows-arm64-full.zip` | Win ARM64 client + `sing-box.exe` |
+| `Swell-Box-darwin-arm64-full.zip` | macOS Apple Silicon **`.app`** + `sing-box`（无终端、带图标） |
+| `Swell-Box-linux-amd64-full.zip` | Linux x64 + `sing-box` |
+| `Swell-Box-linux-arm64-full.zip` | Linux ARM64 + `sing-box` |
 
 `sing-box` is **only inside the full zip**, not uploaded as a separate Release file.
 
-Also published: thin clients `SWELL-Box-<os>-<arch>[.exe]` (no core; Start can download if online).
+Also published: thin clients `Swell-Box-<os>-<arch>[.exe]` (no core; Start can download if online).
 
 ## Usage
 
 1. Extract the full zip for your platform
 2. Run:
-   - **Windows:** `SWELL-Box.exe`
-   - **macOS:** open `SWELL Box.app` (menu bar only; first time: right-click → Open)
-   - **Linux:** `./SWELL-Box`
+   - **Windows:** `Swell-Box.exe`
+   - **macOS:** open `Swell-Box.app` (menu bar only; first time: right-click → Open)
+   - **Linux:** `./Swell-Box`
 3. **Add** → import node / subscription / config
 4. **Start**
 5. **Dashboard** for connections / selectors

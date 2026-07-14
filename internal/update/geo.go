@@ -52,7 +52,7 @@ func downloadGeo(client *http.Client, url, dest string) error {
 	if err != nil {
 		return err
 	}
-	req.Header.Set("User-Agent", "SWELLBox/"+AppVersion)
+	req.Header.Set("User-Agent", "Swell-Box/"+AppVersion)
 	resp, err := client.Do(req)
 	if err != nil {
 		return err

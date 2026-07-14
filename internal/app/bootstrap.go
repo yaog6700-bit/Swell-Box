@@ -18,7 +18,7 @@ type RuleSetFiles struct {
 // and always installs local rule-set files needed for offline-first routing.
 //
 // Call InstallBundledCore separately (or via update.EnsureCore) to pick up
-// sing-box.exe shipped next to SWELL-Box.exe.
+// sing-box.exe shipped next to Swell-Box.exe.
 func BootstrapDataDir(defaultConfig []byte, iconPNG []byte, rules RuleSetFiles) error {
 	home, err := paths.HomeDir()
 	if err != nil {

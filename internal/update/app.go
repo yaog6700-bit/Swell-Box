@@ -1,4 +1,4 @@
-package update
+﻿package update
 
 import (
 	"fmt"
@@ -16,7 +16,7 @@ type AppCheckResult struct {
 	Message     string
 }
 
-// CheckApp checks GitHub releases for a newer SWELL Box build when AppReleaseRepo is set.
+// CheckApp checks GitHub releases for a newer Swell-Box build when AppReleaseRepo is set.
 func CheckApp() *AppCheckResult {
 	res := &AppCheckResult{Current: AppVersion}
 	if AppReleaseRepo == "" {
@@ -40,8 +40,8 @@ func pickAppAsset(res *AppCheckResult, assets []ghAsset) {
 	platform := goos + "-" + goarch
 
 	var (
-		exePlatform string // SWELL-Box-windows-amd64.exe
-		exeGeneric  string // SWELL-Box.exe
+		exePlatform string // Swell-Box-windows-amd64.exe
+		exeGeneric  string // Swell-Box.exe
 		fullZip     string // *-full.zip with platform
 		anyZip      string
 	)
@@ -57,7 +57,7 @@ func pickAppAsset(res *AppCheckResult, assets []ghAsset) {
 				exePlatform = url
 			}
 		case goos == "windows" && strings.HasSuffix(n, ".exe") && strings.Contains(n, "swell") && !strings.Contains(n, "sing-box"):
-			// untagged or other arch naming — keep as weak fallback
+			// untagged or other arch naming 鈥?keep as weak fallback
 			if exeGeneric == "" && !strings.Contains(n, "arm64") && goarch == "amd64" {
 				exeGeneric = url
 			}

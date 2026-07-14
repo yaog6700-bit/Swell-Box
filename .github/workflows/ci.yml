@@ -77,6 +77,6 @@ jobs:
           if [ "${{ matrix.goos }}" = "windows" ]; then
             LDFLAGS="-H=windowsgui -s -w"
           fi
-          OUT="dist/SWELL-Box${{ matrix.ext }}"
+          OUT="dist/Swell-Box${{ matrix.ext }}"
           go build -ldflags "$LDFLAGS" -o "$OUT" ./cmd/swellbox
           ls -la "$OUT"

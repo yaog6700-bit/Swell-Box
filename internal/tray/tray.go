@@ -462,7 +462,7 @@ func (c *Controller) ensureCoreAsync() {
 }
 
 func (c *Controller) ensureCoreSync() error {
-	// 1) install from same folder as SWELL-Box.exe (full zip package)
+	// 1) install from same folder as Swell-Box.exe (full zip package)
 	if _, err := update.InstallBundledCore(); err == nil && update.CorePresent() {
 		return nil
 	}

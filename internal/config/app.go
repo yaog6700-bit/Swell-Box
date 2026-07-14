@@ -9,7 +9,7 @@ import (
 	"github.com/swell-app/swellbox/internal/paths"
 )
 
-// AppSettings is SWELL Box client state (not sing-box core config).
+// AppSettings is Swell-Box client state (not sing-box core config).
 type AppSettings struct {
 	// ActiveConfig is the active config file name under the data dir, e.g. config.json
 	ActiveConfig string `json:"active_config"`

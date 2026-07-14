@@ -1,4 +1,4 @@
-﻿# Build SWELL Box for Windows (no console + embedded app icon)
+# Build Swell-Box for Windows (no console + embedded app icon)
 # Usage:
 #   .\scripts\build.ps1              # current arch (usually amd64)
 #   .\scripts\build.ps1 -Arch arm64  # Windows ARM64
@@ -36,6 +36,6 @@ New-Item -ItemType Directory -Force -Path dist | Out-Null
 $env:CGO_ENABLED = "0"
 $env:GOOS = "windows"
 $env:GOARCH = $Arch
-$out = if ($Arch -eq "amd64") { "dist/SWELL-Box.exe" } else { "dist/SWELL-Box-windows-arm64.exe" }
+$out = if ($Arch -eq "amd64") { "dist/Swell-Box.exe" } else { "dist/Swell-Box-windows-arm64.exe" }
 go build -ldflags "-H=windowsgui -s -w" -o $out ./cmd/swellbox
 Write-Host "OK -> $out (windows/$Arch)"

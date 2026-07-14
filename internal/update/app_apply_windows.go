@@ -44,7 +44,7 @@ func ApplyAppUpdate(downloadURL string, isZip bool, stopFn func() error) error {
 		return fmt.Errorf("download: %w", err)
 	}
 
-	newExe := filepath.Join(tmpDir, "SWELL-Box.new.exe")
+	newExe := filepath.Join(tmpDir, "Swell-Box.new.exe")
 	if isZip || looksLikeZip(dlPath) {
 		extracted, err := extractWindowsClientFromZip(dlPath, tmpDir)
 		if err != nil {
@@ -147,7 +147,7 @@ func extractWindowsClientFromZip(zipPath, destDir string) (string, error) {
 		}
 	}
 	if best == nil {
-		return "", fmt.Errorf("zip has no SWELL-Box.exe")
+		return "", fmt.Errorf("zip has no Swell-Box.exe")
 	}
 	outPath := filepath.Join(destDir, "from-zip.exe")
 	rc, err := best.Open()

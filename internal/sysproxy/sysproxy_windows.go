@@ -113,7 +113,7 @@ func Restore() error {
 	return nil
 }
 
-// WeOwn reports whether SWELL currently enabled the proxy.
+// WeOwn reports whether Swell-Box currently enabled the proxy.
 func WeOwn() bool {
 	mu.Lock()
 	defer mu.Unlock()

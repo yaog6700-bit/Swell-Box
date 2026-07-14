@@ -24,8 +24,8 @@ fi
 rm -rf "$OUT_APP"
 mkdir -p "$OUT_APP/Contents/MacOS" "$OUT_APP/Contents/Resources"
 
-cp "$BIN" "$OUT_APP/Contents/MacOS/SWELL-Box"
-chmod +x "$OUT_APP/Contents/MacOS/SWELL-Box"
+cp "$BIN" "$OUT_APP/Contents/MacOS/Swell-Box"
+chmod +x "$OUT_APP/Contents/MacOS/Swell-Box"
 
 # App icon (.icns) via sips + iconutil (macOS only)
 WORKDIR="$(mktemp -d)"
@@ -57,15 +57,15 @@ cat > "$OUT_APP/Contents/Info.plist" <<EOF
   <key>CFBundleDevelopmentRegion</key>
   <string>en</string>
   <key>CFBundleExecutable</key>
-  <string>SWELL-Box</string>
+  <string>Swell-Box</string>
   <key>CFBundleIdentifier</key>
   <string>com.swellbox.app</string>
   <key>CFBundleInfoDictionaryVersion</key>
   <string>6.0</string>
   <key>CFBundleName</key>
-  <string>SWELL Box</string>
+  <string>Swell-Box</string>
   <key>CFBundleDisplayName</key>
-  <string>SWELL Box</string>
+  <string>Swell-Box</string>
   <key>CFBundlePackageType</key>
   <string>APPL</string>
   <key>CFBundleShortVersionString</key>

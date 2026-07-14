@@ -24,7 +24,7 @@ func FetchURL(rawURL string) ([]sharelink.Node, error) {
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("User-Agent", "SWELLBox/0.2")
+	req.Header.Set("User-Agent", "Swell-Box/0.2")
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("download: %w", err)

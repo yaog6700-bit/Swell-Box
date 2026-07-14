@@ -104,7 +104,7 @@ func installedCoreVersion() string {
 		return ""
 	}
 	// run sing-box version
-	// avoid import cycle with core — exec here
+	// avoid import cycle with core 鈥?exec here
 	out, err := runCmd(bin, "version")
 	if err != nil {
 		return ""
@@ -379,7 +379,7 @@ func httpGet(url string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("User-Agent", "SWELLBox/"+AppVersion)
+	req.Header.Set("User-Agent", "Swell-Box/"+AppVersion)
 	req.Header.Set("Accept", "application/vnd.github+json")
 	resp, err := client.Do(req)
 	if err != nil {
@@ -412,7 +412,7 @@ func downloadFile(url, dest string) error {
 	if err != nil {
 		return err
 	}
-	req.Header.Set("User-Agent", "SWELLBox/"+AppVersion)
+	req.Header.Set("User-Agent", "Swell-Box/"+AppVersion)
 	resp, err := client.Do(req)
 	if err != nil {
 		return err

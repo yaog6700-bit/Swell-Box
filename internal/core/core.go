@@ -46,7 +46,7 @@ func (m *Manager) ResolveBinary() (string, error) {
 		return "", fmt.Errorf("core_path not found: %s", m.CorePath)
 	}
 
-	// Next to the SWELL Box executable (incl. macOS .app layouts).
+	// Next to the Swell-Box executable (incl. macOS .app layouts).
 	if exePath, err := os.Executable(); err == nil {
 		if r, err := filepath.EvalSymlinks(exePath); err == nil {
 			exePath = r
@@ -86,7 +86,7 @@ func (m *Manager) ResolveBinary() (string, error) {
 
 	return "", fmt.Errorf(
 		"sing-box binary not found\n"+
-			"Put %s next to SWELL-Box, or in ~/.swellbox/bin (Windows: %%USERPROFILE%%\\.swellbox\\bin), or on PATH",
+			"Put %s next to Swell-Box, or in ~/.swellbox/bin (Windows: %%USERPROFILE%%\\.swellbox\\bin), or on PATH",
 		name,
 	)
 }

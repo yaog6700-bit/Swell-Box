@@ -1,4 +1,4 @@
-//go:build windows
+﻿//go:build windows
 
 package autostart
 
@@ -10,7 +10,7 @@ import (
 	"golang.org/x/sys/windows/registry"
 )
 
-const regName = "SWELL Box"
+const regName = "Swell-Box"
 
 func regKey() (registry.Key, error) {
 	return registry.OpenKey(

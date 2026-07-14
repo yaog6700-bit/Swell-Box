@@ -1,4 +1,4 @@
-package paths
+﻿package paths
 
 import (
 	"os"
@@ -7,13 +7,18 @@ import (
 )
 
 const (
-	AppName     = "SWELL Box"
-	AppID       = "swellbox"
-	Brand       = "SWELL"
+	// AppName is the user-visible product name (tray, notifications, about).
+	AppName = "Swell-Box"
+	// AppID is the stable id for data dirs (must stay "swellbox" for existing users).
+	AppID = "swellbox"
+	// Brand short mark.
+	Brand = "Swell"
+	// BinaryBase is the release/client binary base name without extension.
+	BinaryBase  = "Swell-Box"
 	DefaultPort = 9091
 )
 
-// HomeDir returns the SWELL Box user data directory:
+// HomeDir returns the Swell-Box user data directory:
 //   Windows: %USERPROFILE%\.swellbox
 //   others:  $HOME/.swellbox
 func HomeDir() (string, error) {

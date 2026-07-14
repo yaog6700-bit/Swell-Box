@@ -32,7 +32,7 @@ func CorePresent() bool {
 
 // EnsureCore makes sure a core binary is available:
 //  1. already in ~/.swellbox/bin or next to exe
-//  2. copy from package (next to SWELL-Box.exe) into data dir
+//  2. copy from package (next to Swell-Box.exe) into data dir
 //  3. download from GitHub (needs network)
 //
 // channel: stable or pre (used only for online download).
@@ -85,7 +85,7 @@ func EnsureCoreOrError(channel string) error {
 	}
 	_, err := EnsureCore(channel, nil)
 	if err != nil {
-		return fmt.Errorf("core missing: place sing-box.exe next to SWELL-Box.exe, or connect network for auto-download: %w", err)
+		return fmt.Errorf("core missing: place sing-box.exe next to Swell-Box.exe, or connect network for auto-download: %w", err)
 	}
 	return nil
 }

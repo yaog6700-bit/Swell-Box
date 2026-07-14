@@ -23,7 +23,7 @@ def main() -> None:
     platform = os.environ["PLATFORM"]
     core_bin = os.environ["CORE_BIN"]
     client_ext = os.environ.get("CLIENT_EXT", "")
-    ua = os.environ.get("UA", "SWELLBox-CI")
+    ua = os.environ.get("UA", "Swell-Box-CI")
 
     rel = json.loads(Path("dist/rel.json").read_text(encoding="utf-8"))
     print("core tag=", rel.get("tag_name"), flush=True)
@@ -113,7 +113,7 @@ def main() -> None:
 
     # macOS .app layout: put core next to the executable inside Contents/MacOS
     # so InstallBundledCore / ResolveBinary find it without PATH setup.
-    macos_bin = pkg / "SWELL Box.app" / "Contents" / "MacOS"
+    macos_bin = pkg / "Swell-Box.app" / "Contents" / "MacOS"
     if macos_bin.is_dir():
         dest = macos_bin / core_bin
         shutil.copy2(found, dest)
@@ -128,7 +128,7 @@ def main() -> None:
             side.chmod(0o755)
         except OSError:
             pass
-        run_hint = "2. Open SWELL Box.app (menu bar only; no Terminal)"
+        run_hint = "2. Open Swell-Box.app (menu bar only; no Terminal)"
     else:
         dest = pkg / core_bin
         shutil.copy2(found, dest)
@@ -138,17 +138,17 @@ def main() -> None:
             pass
         for dll in extract.rglob("*.dll"):
             shutil.copy2(dll, pkg / dll.name)
-        run_hint = f"2. Run SWELL-Box{client_ext}"
+        run_hint = f"2. Run Swell-Box{client_ext}"
 
     (pkg / "README.txt").write_text(
         "\n".join(
             [
-                f"SWELL Box — offline package ({platform})",
+                f"Swell-Box — offline package ({platform})",
                 "1. Extract this folder",
                 run_hint,
                 f"3. {core_bin} is bundled for offline use (no download needed)",
                 "",
-                "macOS tip: first open → right-click SWELL Box.app → Open (Gatekeeper).",
+                "macOS tip: first open → right-click Swell-Box.app → Open (Gatekeeper).",
                 "Data: ~/.swellbox  (Windows: %USERPROFILE%\\.swellbox)",
                 "",
             ]
@@ -156,7 +156,7 @@ def main() -> None:
         encoding="utf-8",
     )
 
-    full = Path(f"dist/SWELL-Box-{platform}-full.zip")
+    full = Path(f"dist/Swell-Box-{platform}-full.zip")
     if full.exists():
         full.unlink()
     with zipfile.ZipFile(full, "w", zipfile.ZIP_DEFLATED) as zf:
