@@ -5,4 +5,4 @@ var AppVersion = "0.2.5"
 
 // AppReleaseRepo is "owner/repo" for GitHub Releases app updates.
 // Empty = app update check only reports local version / manual update.
-var AppReleaseRepo = "yaog6700-bit/Swell-box"
+var AppReleaseRepo = "yaog6700-bit/Swell-Box"

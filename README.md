@@ -2,7 +2,7 @@
 
 **SWELL Box** is a lightweight system-tray client for [sing-box](https://github.com/SagerNet/sing-box).
 
-**Repository:** [github.com/yaog6700-bit/Swell-box](https://github.com/yaog6700-bit/Swell-box)
+**Repository:** [github.com/yaog6700-bit/Swell-Box](https://github.com/yaog6700-bit/Swell-Box)
 
 Brand: **SWELL** · Binary: `SWELL-Box` / `SWELL-Box.exe`
 

@@ -120,7 +120,7 @@ jobs:
         run: |
           mkdir -p dist/package
           VER="${{ needs.meta.outputs.version }}"
-          REPO="yaog6700-bit/Swell-box"
+          REPO="yaog6700-bit/Swell-Box"
           LDFLAGS="-s -w -X github.com/swell-app/swellbox/internal/update.AppVersion=${VER} -X github.com/swell-app/swellbox/internal/update.AppReleaseRepo=${REPO}"
           if [ "${{ matrix.goos }}" = "windows" ]; then
             LDFLAGS="-H=windowsgui ${LDFLAGS}"
