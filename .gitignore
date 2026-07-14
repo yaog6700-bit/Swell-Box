@@ -1,11 +1,14 @@
-# Build
+# Build outputs
 /dist/
 /build/
 /bin/
 *.exe
 *.syso
-swellbox
-swellbox.exe
+
+# Do NOT ignore source package cmd/swellbox — only binary names at repo root:
+/swellbox
+/swellbox.exe
+/SWELL-Box.exe
 
 # IDE / OS
 .idea/
@@ -14,9 +17,9 @@ swellbox.exe
 .DS_Store
 Thumbs.db
 
-# Local runtime (user data lives in ~/.swellbox)
+# Local / temp
 /tmp/
 *.log
 
-# Downloaded core (optional local cache)
+# Optional local core cache
 /third_party/sing-box*
