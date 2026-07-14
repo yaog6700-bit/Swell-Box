@@ -41,17 +41,25 @@ go mod tidy
 | Workflow | Trigger | Output |
 |----------|---------|--------|
 | **CI** | push / PR to `main` | compile check |
-| **Release** | push tag `v*` | Release assets (`SWELL-Box.exe` + zip) |
+| **Release** | push tag `v*` | full offline zip + client |
 
 Create a release:
 
 ```bash
-git tag v0.2.1
-git push origin v0.2.1
+git tag v0.2.2
+git push origin v0.2.2
 ```
 
-Or: **Actions → Release → Run workflow**.
-## Usage
+**Release assets:**
+
+| File | Contents |
+|------|----------|
+| `SWELL-Box-windows-amd64-full.zip` | **Recommended** — `SWELL-Box.exe` + `sing-box.exe` (no download needed) |
+| `SWELL-Box.exe` | Client only (Start will use next-to-exe core, or download if online) |
+
+Put `sing-box.exe` in the **same folder** as `SWELL-Box.exe` for offline use.
+
+Adding nodes does not download the core; **Start** does (local first, then network).## Usage
 
 1. Run `SWELL-Box.exe` (tray icon)
 2. **Add** → import node / subscription / config

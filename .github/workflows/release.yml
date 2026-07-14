@@ -7,16 +7,20 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Optional tag to build (e.g. v0.2.1). Leave empty for manual artifact-only build."
+        description: "Optional tag to build (e.g. v0.2.2). Leave empty for artifact-only."
         required: false
         default: ""
+      core_channel:
+        description: "sing-box channel to bundle: pre or stable"
+        required: false
+        default: "pre"
 
 permissions:
   contents: write
 
 jobs:
   build-windows:
-    name: Build Windows amd64
+    name: Build Windows amd64 (with core)
     runs-on: windows-latest
     steps:
       - name: Checkout
@@ -45,6 +49,9 @@ jobs:
             echo "version=0.0.0-dev" >> "$GITHUB_OUTPUT"
             echo "tag=" >> "$GITHUB_OUTPUT"
           fi
+          CH="${{ inputs.core_channel }}"
+          if [[ -z "$CH" ]]; then CH=pre; fi
+          echo "core_channel=$CH" >> "$GITHUB_OUTPUT"
 
       - name: Embed Windows icon (rsrc)
         shell: pwsh
@@ -56,18 +63,69 @@ jobs:
             & $rsrc -ico .\internal\seed\app.ico -arch amd64 -o .\cmd\swellbox\rsrc_windows_amd64.syso
           }
 
-      - name: Build
+      - name: Build SWELL Box
         shell: pwsh
         run: |
           $ver = "${{ steps.ver.outputs.version }}"
           $ld = "-H=windowsgui -s -w -X github.com/swell-app/swellbox/internal/update.AppVersion=$ver"
           go build -ldflags $ld -o dist/SWELL-Box.exe ./cmd/swellbox
-          Get-Item dist/SWELL-Box.exe | Format-List Name, Length, LastWriteTime
 
-      - name: Zip
+      - name: Bundle official sing-box core
         shell: pwsh
         run: |
-          Compress-Archive -Path dist/SWELL-Box.exe -DestinationPath dist/SWELL-Box-windows-amd64.zip -Force
+          $channel = "${{ steps.ver.outputs.core_channel }}"
+          Write-Host "core channel=$channel"
+          if ($channel -eq "stable") {
+            $api = "https://api.github.com/repos/SagerNet/sing-box/releases/latest"
+            $rel = Invoke-RestMethod -Uri $api -Headers @{ "User-Agent" = "SWELLBox-CI"; "Accept" = "application/vnd.github+json" }
+          } else {
+            $list = Invoke-RestMethod -Uri "https://api.github.com/repos/SagerNet/sing-box/releases?per_page=20" -Headers @{ "User-Agent" = "SWELLBox-CI"; "Accept" = "application/vnd.github+json" }
+            $rel = $list | Where-Object { -not $_.draft } | Select-Object -First 1
+          }
+          Write-Host "core tag=$($rel.tag_name)"
+          $asset = $rel.assets | Where-Object {
+            $_.name -match 'windows-amd64\.zip$' -and $_.name -notmatch 'legacy'
+          } | Select-Object -First 1
+          if (-not $asset) {
+            $asset = $rel.assets | Where-Object { $_.name -match 'windows-amd64' -and $_.name -like '*.zip' } | Select-Object -First 1
+          }
+          if (-not $asset) { throw "no windows-amd64 zip in $($rel.tag_name)" }
+          Write-Host "asset=$($asset.name)"
+          $zip = "dist\sing-box-core.zip"
+          Invoke-WebRequest -Uri $asset.browser_download_url -OutFile $zip -Headers @{ "User-Agent" = "SWELLBox-CI" }
+          Expand-Archive -Path $zip -DestinationPath dist\core-extract -Force
+          $core = Get-ChildItem -Path dist\core-extract -Recurse -Filter sing-box.exe | Select-Object -First 1
+          if (-not $core) { throw "sing-box.exe not found in archive" }
+          Copy-Item $core.FullName dist\sing-box.exe -Force
+          Get-ChildItem -Path dist\core-extract -Recurse -Filter *.dll | ForEach-Object {
+            Copy-Item $_.FullName "dist\$($_.Name)" -Force
+          }
+          # package layout for users: unzip and run
+          New-Item -ItemType Directory -Force -Path dist\package | Out-Null
+          Copy-Item dist\SWELL-Box.exe dist\package\ -Force
+          Copy-Item dist\sing-box.exe dist\package\ -Force
+          Get-ChildItem dist\*.dll -ErrorAction SilentlyContinue | ForEach-Object {
+            Copy-Item $_.FullName dist\package\ -Force
+          }
+          @"
+          SWELL Box — offline package
+          1. Extract this folder
+          2. Run SWELL-Box.exe
+          3. sing-box.exe in the same folder is used as core (no download needed)
+
+          Data: %USERPROFILE%\.swellbox
+          "@ | Set-Content dist\package\README.txt -Encoding UTF8
+          echo "core_tag=$($rel.tag_name)" >> $env:GITHUB_OUTPUT
+
+      - name: Zip packages
+        shell: pwsh
+        run: |
+          # Full offline zip (recommended)
+          if (Test-Path dist\SWELL-Box-windows-amd64-full.zip) { Remove-Item dist\SWELL-Box-windows-amd64-full.zip -Force }
+          Compress-Archive -Path dist\package\* -DestinationPath dist\SWELL-Box-windows-amd64-full.zip -Force
+          # Thin client-only zip (legacy)
+          Compress-Archive -Path dist\SWELL-Box.exe -DestinationPath dist\SWELL-Box-windows-amd64.zip -Force
+          Get-ChildItem dist\*.zip, dist\SWELL-Box.exe, dist\sing-box.exe | Format-Table Name, Length
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
@@ -75,6 +133,8 @@ jobs:
           name: SWELL-Box-windows-amd64
           path: |
             dist/SWELL-Box.exe
+            dist/sing-box.exe
+            dist/SWELL-Box-windows-amd64-full.zip
             dist/SWELL-Box-windows-amd64.zip
           if-no-files-found: error
 
@@ -86,18 +146,24 @@ jobs:
           name: SWELL Box ${{ steps.ver.outputs.tag }}
           generate_release_notes: true
           files: |
+            dist/SWELL-Box-windows-amd64-full.zip
             dist/SWELL-Box.exe
+            dist/sing-box.exe
             dist/SWELL-Box-windows-amd64.zip
           body: |
             ## SWELL Box ${{ steps.ver.outputs.tag }}
 
-            ### Downloads
-            - **SWELL-Box.exe** — Windows amd64, no console window
-            - **SWELL-Box-windows-amd64.zip** — same binary, zipped
+            ### 推荐下载（完整包，可离线）
+            - **SWELL-Box-windows-amd64-full.zip** — 含 `SWELL-Box.exe` + `sing-box.exe`（内核）
+              解压后同目录运行，**无需外网下载内核**
 
-            ### Notes
-            - Data dir: `%USERPROFILE%\.swellbox`
-            - Core can be auto-downloaded on first run
-            - Geo rules are bundled; update via tray menu when needed
+            ### 其它
+            - **SWELL-Box.exe** — 仅客户端（首次启动有网可自动下内核）
+            - **sing-box.exe** — 官方内核单独文件
+
+            ### 说明
+            - 用户数据：`%USERPROFILE%\.swellbox`（节点配置**不会**上传 GitHub）
+            - 添加节点后点「启动」：若缺少内核会先用同目录内核，再尝试联网下载
+            - Geo 规则已内置；可在托盘「更新 Geo 规则」在线更新
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

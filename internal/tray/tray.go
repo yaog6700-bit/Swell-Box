@@ -376,12 +376,18 @@ func (c *Controller) coreChannel() string {
 }
 
 func (c *Controller) ensureCoreAsync() {
+	// Prefer copying bundled core next to exe (offline package).
+	if ok, _ := update.InstallBundledCore(); ok {
+		notify.Info(paths.AppName, fmt.Sprintf(i18n.T("core_ready"), "bundled"))
+		return
+	}
 	if update.CorePresent() {
 		return
 	}
 	notify.Info(paths.AppName, i18n.T("core_missing"))
 	ver, err := update.EnsureCore(c.coreChannel(), nil)
 	if err != nil {
+		// Offline without bundle: warn only; Start will error with clear message.
 		notify.Error(paths.AppName, i18n.T("core_download_fail")+err.Error())
 		return
 	}
@@ -389,9 +395,14 @@ func (c *Controller) ensureCoreAsync() {
 }
 
 func (c *Controller) ensureCoreSync() error {
+	// 1) install from same folder as SWELL-Box.exe (full zip package)
+	if _, err := update.InstallBundledCore(); err == nil && update.CorePresent() {
+		return nil
+	}
 	if update.CorePresent() {
 		return nil
 	}
+	// 2) online download (needs network)
 	notify.Info(paths.AppName, i18n.T("core_missing"))
 	ver, err := update.EnsureCore(c.coreChannel(), nil)
 	if err != nil {
