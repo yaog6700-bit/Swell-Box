@@ -26,6 +26,7 @@ Brand: **SWELL** · Binary: `SWELL-Box` / `SWELL-Box.exe`
 - Default split routing: CN direct / others via proxy (local `geosite-cn.srs` / `geoip-cn.srs`)
 - Update core (stable / pre-release), update Geo rules
 - Launch at login, auto-connect, system proxy
+- **TUN mode** (tray toggle; runtime inject; prefer run as admin)
 - Chinese / English UI
 
 ## Requirements
@@ -77,7 +78,7 @@ git push origin v0.2.4
 |------|----------|
 | `SWELL-Box-windows-amd64-full.zip` | Win x64 client + `sing-box.exe` |
 | `SWELL-Box-windows-arm64-full.zip` | Win ARM64 client + `sing-box.exe` |
-| `SWELL-Box-darwin-arm64-full.zip` | macOS Apple Silicon + `sing-box` |
+| `SWELL-Box-darwin-arm64-full.zip` | macOS Apple Silicon **`.app`** + `sing-box`（无终端、带图标） |
 | `SWELL-Box-linux-amd64-full.zip` | Linux x64 + `sing-box` |
 | `SWELL-Box-linux-arm64-full.zip` | Linux ARM64 + `sing-box` |
 
@@ -88,7 +89,10 @@ Also published: thin clients `SWELL-Box-<os>-<arch>[.exe]` (no core; Start can d
 ## Usage
 
 1. Extract the full zip for your platform
-2. Run `SWELL-Box` / `SWELL-Box.exe` (tray icon)
+2. Run:
+   - **Windows:** `SWELL-Box.exe`
+   - **macOS:** open `SWELL Box.app` (menu bar only; first time: right-click → Open)
+   - **Linux:** `./SWELL-Box`
 3. **Add** → import node / subscription / config
 4. **Start**
 5. **Dashboard** for connections / selectors

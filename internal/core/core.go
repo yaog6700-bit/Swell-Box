@@ -46,11 +46,22 @@ func (m *Manager) ResolveBinary() (string, error) {
 		return "", fmt.Errorf("core_path not found: %s", m.CorePath)
 	}
 
-	// Next to the SWELL Box executable.
+	// Next to the SWELL Box executable (incl. macOS .app layouts).
 	if exePath, err := os.Executable(); err == nil {
-		candidate := filepath.Join(filepath.Dir(exePath), name)
-		if st, err := os.Stat(candidate); err == nil && !st.IsDir() {
-			return candidate, nil
+		if r, err := filepath.EvalSymlinks(exePath); err == nil {
+			exePath = r
+		}
+		dir := filepath.Dir(exePath)
+		for _, candidate := range []string{
+			filepath.Join(dir, name),
+			filepath.Join(dir, "bin", name),
+			filepath.Join(dir, "core", name),
+			filepath.Clean(filepath.Join(dir, "..", "Resources", name)),
+			filepath.Clean(filepath.Join(dir, "..", "..", "..", name)),
+		} {
+			if st, err := os.Stat(candidate); err == nil && !st.IsDir() {
+				return candidate, nil
+			}
 		}
 	}
 

@@ -122,8 +122,23 @@ jobs:
           fi
           OUT="dist/SWELL-Box${{ matrix.ext }}"
           go build -ldflags "$LDFLAGS" -o "$OUT" ./cmd/swellbox
-          cp "$OUT" dist/package/
           ls -la "$OUT"
+
+          if [ "${{ matrix.goos }}" = "darwin" ]; then
+            chmod +x scripts/package_macos_app.sh
+            ./scripts/package_macos_app.sh "$OUT" "dist/SWELL Box.app" "$VER"
+            # Prefer .app in package; keep raw binary only as build product for debugging
+            rm -rf dist/package/*
+            cp -R "dist/SWELL Box.app" dist/package/
+            # Thin client zip = the .app alone
+            (
+              cd dist
+              ditto -c -k --sequesterRsrc --keepParent "SWELL Box.app" "SWELL-Box-darwin-${{ matrix.goarch }}.zip" \
+                || zip -r "SWELL-Box-darwin-${{ matrix.goarch }}.zip" "SWELL Box.app"
+            )
+          else
+            cp "$OUT" dist/package/
+          fi
 
       - name: Bundle official sing-box core
         shell: bash
@@ -150,7 +165,8 @@ jobs:
           fi
 
           $PY scripts/ci_bundle_core.py
-          ls -la "dist/SWELL-Box-${PLATFORM}-full.zip" "dist/SWELL-Box${CLIENT_EXT}"
+          ls -la "dist/SWELL-Box-${PLATFORM}-full.zip" || true
+          ls -la dist/ | head -40
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
@@ -158,6 +174,7 @@ jobs:
           name: SWELL-Box-${{ matrix.goos }}-${{ matrix.goarch }}
           path: |
             dist/SWELL-Box${{ matrix.ext }}
+            dist/SWELL-Box-${{ matrix.goos }}-${{ matrix.goarch }}.zip
             dist/SWELL-Box-${{ matrix.goos }}-${{ matrix.goarch }}-full.zip
           if-no-files-found: error
 
@@ -186,10 +203,16 @@ jobs:
               name=$(basename "$f")
               if [[ "$name" == *-full.zip ]]; then
                 cp "$f" "out/$name"
+              elif [[ "$name" == SWELL-Box-*-*.zip ]]; then
+                # thin client zip (e.g. macOS .app zip already platform-tagged)
+                cp "$f" "out/$name"
               elif [[ "$name" == SWELL-Box.exe ]]; then
                 cp "$f" "out/SWELL-Box-${platform}.exe"
               elif [[ "$name" == SWELL-Box ]]; then
-                cp "$f" "out/SWELL-Box-${platform}"
+                # raw unix binary (linux); macOS prefers the .app zip above
+                if [[ "$platform" != darwin-* ]]; then
+                  cp "$f" "out/SWELL-Box-${platform}"
+                fi
               else
                 cp "$f" "out/$name"
               fi
@@ -213,7 +236,7 @@ jobs:
             |------|------|------|
             | Windows | amd64 | `SWELL-Box-windows-amd64-full.zip` |
             | Windows | arm64 | `SWELL-Box-windows-arm64-full.zip` |
-            | macOS | arm64 (Apple Silicon) | `SWELL-Box-darwin-arm64-full.zip` |
+            | macOS | arm64 (Apple Silicon) | `SWELL-Box-darwin-arm64-full.zip`（含 `SWELL Box.app`） |
             | Linux | amd64 | `SWELL-Box-linux-amd64-full.zip` |
             | Linux | arm64 | `SWELL-Box-linux-arm64-full.zip` |
 
@@ -221,12 +244,13 @@ jobs:
 
             ### 仅客户端（带平台标签）
             - `SWELL-Box-windows-amd64.exe` / `SWELL-Box-windows-arm64.exe`
-            - `SWELL-Box-darwin-arm64`
+            - `SWELL-Box-darwin-arm64.zip` — macOS **`.app` 包**（带图标，无终端窗口）
             - `SWELL-Box-linux-amd64` / `SWELL-Box-linux-arm64`
 
             ### 说明
             - 用户数据：`~/.swellbox`（Windows：`%USERPROFILE%\.swellbox`）
             - 官方内核**不会**作为独立 Release 附件；只打进 `*-full.zip`
-            - macOS：仅 Apple Silicon（arm64）
+            - macOS：仅 Apple Silicon；首次打开请右键 → 打开（未签名 Gatekeeper）
+            - macOS 为菜单栏应用（`LSUIElement`），不出现在 Dock，菜单栏只显示图标不显示名称
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

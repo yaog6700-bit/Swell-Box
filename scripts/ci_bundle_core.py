@@ -89,23 +89,45 @@ def main() -> None:
 
     pkg = Path("dist/package")
     pkg.mkdir(parents=True, exist_ok=True)
-    dest = pkg / core_bin
-    shutil.copy2(found, dest)
-    try:
-        dest.chmod(0o755)
-    except OSError:
-        pass
-    for dll in extract.rglob("*.dll"):
-        shutil.copy2(dll, pkg / dll.name)
+
+    # macOS .app layout: put core next to the executable inside Contents/MacOS
+    # so InstallBundledCore / ResolveBinary find it without PATH setup.
+    macos_bin = pkg / "SWELL Box.app" / "Contents" / "MacOS"
+    if macos_bin.is_dir():
+        dest = macos_bin / core_bin
+        shutil.copy2(found, dest)
+        try:
+            dest.chmod(0o755)
+        except OSError:
+            pass
+        # also place next to .app for manual/CLI users
+        side = pkg / core_bin
+        shutil.copy2(found, side)
+        try:
+            side.chmod(0o755)
+        except OSError:
+            pass
+        run_hint = "2. Open SWELL Box.app (menu bar only; no Terminal)"
+    else:
+        dest = pkg / core_bin
+        shutil.copy2(found, dest)
+        try:
+            dest.chmod(0o755)
+        except OSError:
+            pass
+        for dll in extract.rglob("*.dll"):
+            shutil.copy2(dll, pkg / dll.name)
+        run_hint = f"2. Run SWELL-Box{client_ext}"
 
     (pkg / "README.txt").write_text(
         "\n".join(
             [
                 f"SWELL Box — offline package ({platform})",
                 "1. Extract this folder",
-                f"2. Run SWELL-Box{client_ext}",
-                f"3. {core_bin} in the same folder is used as core (no download needed)",
+                run_hint,
+                f"3. {core_bin} is bundled for offline use (no download needed)",
                 "",
+                "macOS tip: first open → right-click SWELL Box.app → Open (Gatekeeper).",
                 "Data: ~/.swellbox  (Windows: %USERPROFILE%\\.swellbox)",
                 "",
             ]

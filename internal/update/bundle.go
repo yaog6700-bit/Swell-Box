@@ -50,13 +50,23 @@ func findBundledCore() (string, error) {
 	if err != nil {
 		return "", err
 	}
+	if r, err := filepath.EvalSymlinks(exe); err == nil {
+		exe = r
+	}
 	dir := filepath.Dir(exe)
+	// Layouts:
+	//   ./sing-box[.exe] next to SWELL-Box
+	//   ./bin/sing-box , ./core/sing-box
+	//   macOS .app: Contents/MacOS/SWELL-Box → also Contents/Resources, and folder next to .app
 	candidates := []string{
 		filepath.Join(dir, name),
 		filepath.Join(dir, "bin", name),
 		filepath.Join(dir, "core", name),
+		filepath.Join(dir, "..", "Resources", name),
+		filepath.Join(dir, "..", "..", "..", name), // next to Foo.app
 	}
 	for _, p := range candidates {
+		p = filepath.Clean(p)
 		if st, err := os.Stat(p); err == nil && !st.IsDir() && st.Size() > 1024 {
 			return p, nil
 		}

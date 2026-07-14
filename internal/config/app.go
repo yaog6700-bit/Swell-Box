@@ -22,6 +22,9 @@ type AppSettings struct {
 	AutoStartProxy bool `json:"auto_start_proxy"`
 	// SystemProxy enables Windows system proxy when core is running.
 	SystemProxy bool `json:"system_proxy"`
+	// TunMode injects a TUN inbound into the runtime config (global capture).
+	// Prefer admin/root when enabling; mutually exclusive with SystemProxy in the tray UI.
+	TunMode bool `json:"tun_mode"`
 	// CoreChannel is "stable" or "pre" for updates / first-run download.
 	CoreChannel string `json:"core_channel"`
 	// Language is "zh" or "en". Default zh.

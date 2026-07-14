@@ -9,11 +9,16 @@ import (
 	"github.com/swell-app/swellbox/internal/paths"
 )
 
+// SwellTunTag is the runtime-injected TUN inbound tag (not written to user config).
+const SwellTunTag = "swell-tun"
+
 // PrepareRuntimeConfig reads the user config, injects / normalizes the official
 // API + dashboard service, and writes a runtime file the core process will load.
 //
 // User configs stay untouched; only the generated runtime copy is modified.
-func PrepareRuntimeConfig(userConfigPath, runtimePath string, dashboardPort int) error {
+// When tunMode is true, a TUN inbound is injected unless the user config already
+// has a tun inbound.
+func PrepareRuntimeConfig(userConfigPath, runtimePath string, dashboardPort int, tunMode bool) error {
 	raw, err := os.ReadFile(userConfigPath)
 	if err != nil {
 		return fmt.Errorf("read config: %w", err)
@@ -34,6 +39,7 @@ func PrepareRuntimeConfig(userConfigPath, runtimePath string, dashboardPort int)
 	preferLocalRuleSets(root)
 	// sing-box ≥1.12 rejects detour:"direct" on DNS servers.
 	stripDirectDNSDetour(root)
+	applyTunMode(root, tunMode)
 
 	out, err := json.MarshalIndent(root, "", "  ")
 	if err != nil {
@@ -43,6 +49,59 @@ func PrepareRuntimeConfig(userConfigPath, runtimePath string, dashboardPort int)
 		return err
 	}
 	return os.WriteFile(runtimePath, out, 0o644)
+}
+
+// applyTunMode injects or removes the managed TUN inbound on the runtime config.
+func applyTunMode(root map[string]any, enabled bool) {
+	// Always drop our previous injection first (idempotent rebuild).
+	inbounds, _ := root["inbounds"].([]any)
+	var kept []any
+	for _, item := range inbounds {
+		m, ok := item.(map[string]any)
+		if !ok {
+			kept = append(kept, item)
+			continue
+		}
+		if tag, _ := m["tag"].(string); tag == SwellTunTag {
+			continue
+		}
+		kept = append(kept, item)
+	}
+	inbounds = kept
+
+	if enabled && !hasUserTun(inbounds) {
+		inbounds = append(inbounds, map[string]any{
+			"type":           "tun",
+			"tag":            SwellTunTag,
+			"interface_name": "swell-tun",
+			"address":        []any{"172.19.0.1/30"},
+			"mtu":            9000,
+			"auto_route":     true,
+			"strict_route":   true,
+			"stack":          "mixed",
+		})
+		// Avoid routing loops when TUN takes over the default route.
+		route, _ := root["route"].(map[string]any)
+		if route == nil {
+			route = map[string]any{}
+		}
+		route["auto_detect_interface"] = true
+		root["route"] = route
+	}
+	root["inbounds"] = inbounds
+}
+
+func hasUserTun(inbounds []any) bool {
+	for _, item := range inbounds {
+		m, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		if t, _ := m["type"].(string); t == "tun" {
+			return true
+		}
+	}
+	return false
 }
 
 func ensureAPIService(root map[string]any, port int) {

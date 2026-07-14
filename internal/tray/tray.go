@@ -55,6 +55,7 @@ type Controller struct {
 	mAutostart     *systray.MenuItem
 	mAutoProxy     *systray.MenuItem
 	mSysProxy      *systray.MenuItem
+	mTunMode       *systray.MenuItem
 	mConfigs       *systray.MenuItem
 	mOpenDir       *systray.MenuItem
 	mOpenLog       *systray.MenuItem
@@ -90,7 +91,8 @@ func (c *Controller) Run() {
 }
 
 func (c *Controller) onReady() {
-	systray.SetTitle(paths.AppName)
+	// Keep tray icon-only. On macOS, SetTitle would show the app name next to the icon.
+	systray.SetTitle("")
 	systray.SetTooltip(i18n.T("tooltip_stopped"))
 	// Match original SingBoxClient: TemplateIcon + Icon for clear off/on colors.
 	c.applyTrayIcon(false)
@@ -124,7 +126,14 @@ func (c *Controller) onReady() {
 	c.mSettings = systray.AddMenuItem(i18n.T("menu_settings"), "")
 	c.mAutostart = c.mSettings.AddSubMenuItemCheckbox(i18n.T("autostart"), "", autostart.Enabled())
 	c.mAutoProxy = c.mSettings.AddSubMenuItemCheckbox(i18n.T("auto_proxy"), "", c.App != nil && c.App.AutoStartProxy)
-	c.mSysProxy = c.mSettings.AddSubMenuItemCheckbox(i18n.T("system_proxy"), "", c.App != nil && c.App.SystemProxy)
+	// TUN and system proxy are mutually exclusive in the UI.
+	if c.App != nil && c.App.TunMode && c.App.SystemProxy {
+		c.App.SystemProxy = false
+		_ = config.SaveAppSettings(c.App)
+	}
+	sysProxyChecked := c.App != nil && c.App.SystemProxy && !c.App.TunMode
+	c.mSysProxy = c.mSettings.AddSubMenuItemCheckbox(i18n.T("system_proxy"), "", sysProxyChecked)
+	c.mTunMode = c.mSettings.AddSubMenuItemCheckbox(i18n.T("tun_mode"), "", c.App != nil && c.App.TunMode)
 	c.mLang = c.mSettings.AddSubMenuItem(i18n.T("language"), "")
 	c.mLangZH = c.mLang.AddSubMenuItemCheckbox(i18n.T("lang_zh"), "", i18n.Get() == i18n.ZH)
 	c.mLangEN = c.mLang.AddSubMenuItemCheckbox(i18n.T("lang_en"), "", i18n.Get() == i18n.EN)
@@ -217,6 +226,8 @@ func (c *Controller) loop() {
 			c.toggleAutoProxy()
 		case <-c.mSysProxy.ClickedCh:
 			c.toggleSysProxy()
+		case <-c.mTunMode.ClickedCh:
+			c.toggleTunMode()
 		case <-c.mOpenDir.ClickedCh:
 			if dir, err := paths.HomeDir(); err == nil {
 				_ = app.OpenPath(dir)
@@ -345,7 +356,18 @@ func (c *Controller) toggleSysProxy() {
 	if c.App == nil {
 		return
 	}
-	c.App.SystemProxy = !c.App.SystemProxy
+	// Enabling system proxy turns off TUN (they conflict for most users).
+	want := !c.App.SystemProxy
+	if want && c.App.TunMode {
+		c.App.TunMode = false
+		if c.mTunMode != nil {
+			c.mTunMode.Uncheck()
+		}
+		if c.Core != nil && c.Core.Running() {
+			c.reloadProxyForTun()
+		}
+	}
+	c.App.SystemProxy = want
 	_ = config.SaveAppSettings(c.App)
 	if c.App.SystemProxy {
 		c.mSysProxy.Check()
@@ -361,6 +383,51 @@ func (c *Controller) toggleSysProxy() {
 		_ = sysproxy.Restore()
 		notify.Info(paths.AppName, i18n.T("sysproxy_off"))
 	}
+}
+
+func (c *Controller) toggleTunMode() {
+	if c.App == nil {
+		return
+	}
+	c.App.TunMode = !c.App.TunMode
+	if c.App.TunMode {
+		// TUN captures traffic at OS level — turn off system HTTP proxy.
+		if c.App.SystemProxy {
+			c.App.SystemProxy = false
+			if c.mSysProxy != nil {
+				c.mSysProxy.Uncheck()
+			}
+			_ = sysproxy.Restore()
+		}
+		if c.mTunMode != nil {
+			c.mTunMode.Check()
+		}
+		_ = config.SaveAppSettings(c.App)
+		if !app.IsElevated() {
+			notify.Info(paths.AppName, i18n.T("tun_admin_hint"))
+		}
+		notify.Info(paths.AppName, i18n.T("tun_on"))
+	} else {
+		if c.mTunMode != nil {
+			c.mTunMode.Uncheck()
+		}
+		_ = config.SaveAppSettings(c.App)
+		notify.Info(paths.AppName, i18n.T("tun_off"))
+	}
+	if c.Core != nil && c.Core.Running() {
+		c.reloadProxyForTun()
+	}
+}
+
+func (c *Controller) reloadProxyForTun() {
+	c.suppressConfigWatch(2 * time.Second)
+	_ = c.stopProxy()
+	if err := c.startProxy(); err != nil {
+		c.setStatus(false, err.Error())
+		notify.Error(paths.AppName, i18n.T("start_failed")+err.Error())
+		return
+	}
+	notify.Info(paths.AppName, i18n.T("tun_restarted"))
 }
 
 func (c *Controller) proxyAddr() string {
@@ -413,8 +480,8 @@ func (c *Controller) ensureCoreSync() error {
 }
 
 func (c *Controller) applySystemProxy(on bool) {
-	if c.App == nil || !c.App.SystemProxy {
-		if !on {
+	if c.App == nil || !c.App.SystemProxy || c.App.TunMode {
+		if !on || (c.App != nil && c.App.TunMode) {
 			_ = sysproxy.Restore()
 		}
 		return
@@ -658,6 +725,7 @@ func (c *Controller) applyMenuLanguage() {
 	set(c.mAutostart, "autostart")
 	set(c.mAutoProxy, "auto_proxy")
 	set(c.mSysProxy, "system_proxy")
+	set(c.mTunMode, "tun_mode")
 	set(c.mLang, "language")
 	set(c.mLangZH, "lang_zh")
 	set(c.mLangEN, "lang_en")
@@ -783,7 +851,8 @@ func (c *Controller) startProxy() error {
 	if err != nil {
 		return err
 	}
-	if err := config.PrepareRuntimeConfig(userCfg, runtimePath, c.App.DashboardPort); err != nil {
+	tunMode := c.App != nil && c.App.TunMode
+	if err := config.PrepareRuntimeConfig(userCfg, runtimePath, c.App.DashboardPort, tunMode); err != nil {
 		return err
 	}
 
@@ -802,8 +871,8 @@ func (c *Controller) startProxy() error {
 		return err
 	}
 	c.setStatus(true, "")
-	// System proxy after core is up
-	if c.App != nil && c.App.SystemProxy {
+	// System proxy after core is up (skip when TUN is capturing traffic)
+	if c.App != nil && c.App.SystemProxy && !c.App.TunMode {
 		_ = sysproxy.Enable(c.proxyAddr())
 	}
 	// Allow Clash API a moment then refresh node list
