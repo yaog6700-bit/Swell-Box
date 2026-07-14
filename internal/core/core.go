@@ -122,6 +122,8 @@ func (m *Manager) Start() error {
 		return err
 	}
 	logPath := filepath.Join(logDir, "core.log")
+	// Prevent unbounded growth: rotate when over maxLogBytes.
+	rotateLogIfNeeded(logPath, maxLogBytes, keepLogBytes)
 	logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
 	if err != nil {
 		m.mu.Unlock()
