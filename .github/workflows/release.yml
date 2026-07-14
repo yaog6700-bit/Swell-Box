@@ -163,23 +163,25 @@ jobs:
           mkdir -p dist
 
           gh_api() {
-            local url="$1" out="$2"
+            local url="$1"
+            local out="$2"
             local n=0
             while true; do
-              n=$((n+1))
+              n=$((n + 1))
               if curl -fsSL \
-                -H "User-Agent: $UA" \
+                -H "User-Agent: ${UA}" \
                 -H "Accept: application/vnd.github+json" \
                 -H "X-GitHub-Api-Version: 2022-11-28" \
                 -H "Authorization: Bearer ${GITHUB_TOKEN}" \
-                "$url" -o "$out"; then
+                "$url" -o "$out"
+              then
                 return 0
               fi
               if [ "$n" -ge 5 ]; then
-                echo "GitHub API failed after $n tries: $url" >&2
+                echo "GitHub API failed after ${n} tries: ${url}" >&2
                 return 1
               fi
-              echo "GitHub API retry $n 鈥? >&2
+              echo "GitHub API retry ${n} ..." >&2
               sleep $((n * 3))
             done
           }
@@ -188,7 +190,7 @@ jobs:
             gh_api "https://api.github.com/repos/SagerNet/sing-box/releases/latest" dist/rel.json
           else
             gh_api "https://api.github.com/repos/SagerNet/sing-box/releases?per_page=20" dist/rel-list.json
-            $PY -c "import json; arr=json.load(open('dist/rel-list.json',encoding='utf-8')); json.dump(next(x for x in arr if not x.get('draft')), open('dist/rel.json','w',encoding='utf-8'))"
+            $PY scripts/ci_pick_release.py
           fi
 
           $PY scripts/ci_bundle_core.py
@@ -257,21 +259,26 @@ jobs:
           body: |
             ## Swell-Box ${{ needs.meta.outputs.tag }}
 
-            ### 鎺ㄨ崘锛氬畬鏁寸绾垮寘锛堝唴鏍稿湪 zip 鍐咃紝涓嶅崟鐙彂甯?sing-box锛?
-            | 骞冲彴 | 鏋舵瀯 | 鏂囦欢 |
-            |------|------|------|
+            ### Recommended: full offline package (core inside zip only)
+            | Platform | Arch | File |
+            |----------|------|------|
             | Windows | amd64 | `Swell-Box-windows-amd64-full.zip` |
             | Windows | arm64 | `Swell-Box-windows-arm64-full.zip` |
-            | macOS | arm64 (Apple Silicon) | `Swell-Box-darwin-arm64-full.zip`锛堝惈 `Swell-Box.app`锛?|
+            | macOS | arm64 (Apple Silicon) | `Swell-Box-darwin-arm64-full.zip` (includes `Swell-Box.app`) |
             | Linux | amd64 | `Swell-Box-linux-amd64-full.zip` |
             | Linux | arm64 | `Swell-Box-linux-arm64-full.zip` |
 
-            瑙ｅ帇鍚庡悓鐩綍杩愯瀹㈡埛绔紱`sing-box` / `sing-box.exe` 鍦ㄥ寘鍐呫€?
-            ### 浠呭鎴风锛堝甫骞冲彴鏍囩锛?            - `Swell-Box-windows-amd64.exe` / `Swell-Box-windows-arm64.exe`
-            - `Swell-Box-darwin-arm64.zip` 鈥?macOS **`.app` 鍖?*锛堝甫鍥炬爣锛屾棤缁堢绐楀彛锛?            - `Swell-Box-linux-amd64` / `Swell-Box-linux-arm64`
+            Extract and run the client; `sing-box` / `sing-box.exe` is inside the full zip.
 
-            ### 璇存槑
-            - 鐢ㄦ埛鏁版嵁锛歚~/.swellbox`锛圵indows锛歚%USERPROFILE%\.swellbox`锛?            - 瀹樻柟鍐呮牳**涓嶄細**浣滀负鐙珛 Release 闄勪欢锛涘彧鎵撹繘 `*-full.zip`
-            - macOS锛氫粎 Apple Silicon锛涢娆℃墦寮€璇峰彸閿?鈫?鎵撳紑锛堟湭绛惧悕 Gatekeeper锛?            - macOS 涓鸿彍鍗曟爮搴旂敤锛坄LSUIElement`锛夛紝涓嶅嚭鐜板湪 Dock锛岃彍鍗曟爮鍙樉绀哄浘鏍囦笉鏄剧ず鍚嶇О
+            ### Client only
+            - `Swell-Box-windows-amd64.exe` / `Swell-Box-windows-arm64.exe`
+            - `Swell-Box-darwin-arm64.zip` (macOS `.app`)
+            - `Swell-Box-linux-amd64` / `Swell-Box-linux-arm64`
+
+            ### Notes
+            - User data: `~/.swellbox` (Windows: `%USERPROFILE%\.swellbox`)
+            - Official core is NOT a separate release asset; only inside `*-full.zip`
+            - macOS: Apple Silicon only; first open may need right-click Open (Gatekeeper)
+            - macOS is a menu-bar app (`LSUIElement`); no Dock icon; tray shows icon only
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
