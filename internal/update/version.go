@@ -1,4 +1,4 @@
-ackage update
+package update
 
 // AppVersion is the Swell-Box client version (override at build with -ldflags).
 var AppVersion = "0.2.8"
