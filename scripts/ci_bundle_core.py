@@ -56,8 +56,29 @@ def main() -> None:
     asset = cands[0]
     print("asset=", asset["name"], flush=True)
 
-    req = urllib.request.Request(asset["browser_download_url"], headers={"User-Agent": ua})
-    data = urllib.request.urlopen(req, timeout=300).read()
+    headers = {"User-Agent": ua, "Accept": "application/octet-stream"}
+    # Prefer token for API-style URLs / rate limits; browser_download_url is public but
+    # authenticated requests are more reliable in parallel CI matrix jobs.
+    token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN") or ""
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+
+    url = asset["browser_download_url"]
+    data = None
+    last_err: Exception | None = None
+    for attempt in range(1, 6):
+        try:
+            req = urllib.request.Request(url, headers=headers)
+            data = urllib.request.urlopen(req, timeout=300).read()
+            break
+        except Exception as e:  # noqa: BLE001 — retry network/403 in CI
+            last_err = e
+            print(f"download attempt {attempt} failed: {e}", flush=True)
+            import time
+
+            time.sleep(attempt * 2)
+    if data is None:
+        raise SystemExit(f"failed to download core asset: {last_err}")
 
     extract = Path("dist/core-extract")
     if extract.exists():

@@ -148,6 +148,8 @@ jobs:
           CORE_BIN: ${{ matrix.core_bin }}
           CLIENT_EXT: ${{ matrix.ext }}
           CHANNEL: ${{ needs.meta.outputs.core_channel }}
+          # Authenticated GitHub API avoids unauthenticated 403 / rate limits (5 matrix jobs).
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
           if command -v python3 >/dev/null 2>&1; then PY=python3; else PY=python; fi
@@ -155,12 +157,32 @@ jobs:
           export UA="SWELLBox-CI"
           mkdir -p dist
 
+          gh_api() {
+            local url="$1" out="$2"
+            local n=0
+            while true; do
+              n=$((n+1))
+              if curl -fsSL \
+                -H "User-Agent: $UA" \
+                -H "Accept: application/vnd.github+json" \
+                -H "X-GitHub-Api-Version: 2022-11-28" \
+                -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+                "$url" -o "$out"; then
+                return 0
+              fi
+              if [ "$n" -ge 5 ]; then
+                echo "GitHub API failed after $n tries: $url" >&2
+                return 1
+              fi
+              echo "GitHub API retry $n …" >&2
+              sleep $((n * 3))
+            done
+          }
+
           if [ "$CHANNEL" = "stable" ]; then
-            curl -fsSL -H "User-Agent: $UA" -H "Accept: application/vnd.github+json" \
-              "https://api.github.com/repos/SagerNet/sing-box/releases/latest" -o dist/rel.json
+            gh_api "https://api.github.com/repos/SagerNet/sing-box/releases/latest" dist/rel.json
           else
-            curl -fsSL -H "User-Agent: $UA" -H "Accept: application/vnd.github+json" \
-              "https://api.github.com/repos/SagerNet/sing-box/releases?per_page=20" -o dist/rel-list.json
+            gh_api "https://api.github.com/repos/SagerNet/sing-box/releases?per_page=20" dist/rel-list.json
             $PY -c "import json; arr=json.load(open('dist/rel-list.json',encoding='utf-8')); json.dump(next(x for x in arr if not x.get('draft')), open('dist/rel.json','w',encoding='utf-8'))"
           fi
 
