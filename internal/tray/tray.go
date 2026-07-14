@@ -93,7 +93,7 @@ func (c *Controller) Run() {
 func (c *Controller) onReady() {
 	// Keep tray icon-only. On macOS, SetTitle would show the app name next to the icon.
 	systray.SetTitle("")
-	systray.SetTooltip(i18n.T("tooltip_stopped"))
+	systray.SetTooltip(i18n.TName("tooltip_stopped"))
 	// Match original SingBoxClient: TemplateIcon + Icon for clear off/on colors.
 	c.applyTrayIcon(false)
 
@@ -151,12 +151,12 @@ func (c *Controller) onReady() {
 	c.mOpenLog = c.mTools.AddSubMenuItem(i18n.T("open_log"), "")
 
 	systray.AddSeparator()
-	c.mAbout = systray.AddMenuItem(i18n.T("about"), "")
+	c.mAbout = systray.AddMenuItem(i18n.TName("about"), "")
 	c.mQuit = systray.AddMenuItem(i18n.T("quit"), "")
 
 	go c.loop()
 
-	notify.Info(paths.AppName, i18n.T("app_running"))
+	notify.Info(paths.AppName, i18n.TName("app_running"))
 
 	// One-app experience: auto-fetch core on first run if missing.
 	go c.ensureCoreAsync()
@@ -409,7 +409,7 @@ func (c *Controller) toggleTunMode() {
 		}
 		_ = config.SaveAppSettings(c.App)
 		if !app.IsElevated() {
-			notify.Info(paths.AppName, i18n.T("tun_admin_hint"))
+			notify.Info(paths.AppName, i18n.TName("tun_admin_hint"))
 		}
 		notify.Info(paths.AppName, i18n.T("tun_on"))
 	} else {
@@ -768,12 +768,14 @@ func (c *Controller) applyMenuLanguage() {
 	set(c.mTools, "menu_tools")
 	set(c.mOpenDir, "open_data")
 	set(c.mOpenLog, "open_log")
-	set(c.mAbout, "about")
+	if c.mAbout != nil {
+		c.mAbout.SetTitle(i18n.TName("about"))
+	}
 	set(c.mQuit, "quit")
 	if running {
-		systray.SetTooltip(i18n.T("tooltip_running"))
+		systray.SetTooltip(i18n.TName("tooltip_running"))
 	} else {
-		systray.SetTooltip(i18n.T("tooltip_stopped"))
+		systray.SetTooltip(i18n.TName("tooltip_stopped"))
 	}
 }
 
@@ -945,7 +947,7 @@ func (c *Controller) applyTrayIcon(running bool) {
 
 func (c *Controller) setStatus(running bool, errMsg string) {
 	if running {
-		systray.SetTooltip(i18n.T("tooltip_running"))
+		systray.SetTooltip(i18n.TName("tooltip_running"))
 		c.applyTrayIcon(true)
 		if c.mProxy != nil {
 			c.mProxy.SetTitle(i18n.T("stop"))
@@ -958,7 +960,7 @@ func (c *Controller) setStatus(running bool, errMsg string) {
 		}
 		return
 	}
-	systray.SetTooltip(i18n.T("tooltip_stopped"))
+	systray.SetTooltip(i18n.TName("tooltip_stopped"))
 	c.applyTrayIcon(false)
 	if c.mProxy != nil {
 		c.mProxy.SetTitle(i18n.T("start"))

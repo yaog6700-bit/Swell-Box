@@ -1,6 +1,11 @@
 package i18n
 
-import "sync"
+import (
+	"fmt"
+	"sync"
+
+	"github.com/swell-app/swellbox/internal/paths"
+)
 
 type Lang string
 
@@ -45,6 +50,16 @@ func T(key string) string {
 	return key
 }
 
+// TName formats a translation that includes the product name (paths.AppName).
+func TName(key string) string {
+	return fmt.Sprintf(T(key), paths.AppName)
+}
+
+// TF is fmt.Sprintf(T(key), args...).
+func TF(key string, args ...any) string {
+	return fmt.Sprintf(T(key), args...)
+}
+
 func IsZH() bool { return Get() == ZH }
 
 var zh = map[string]string{
@@ -78,7 +93,7 @@ var zh = map[string]string{
 	"tun_mode":          "TUN 模式（全局）",
 	"tun_on":            "已开启 TUN：全局接管流量（已关闭系统代理）",
 	"tun_off":           "已关闭 TUN 模式",
-	"tun_admin_hint":    "提示：TUN 通常需要「以管理员身份运行」Swell-Box，否则可能启动失败",
+	"tun_admin_hint":    "提示：TUN 通常需要「以管理员身份运行」%s，否则可能启动失败",
 	"tun_restarted":     "TUN 设置已变更，代理已重载",
 	"configs":           "配置文件",
 	"open_data":         "打开数据目录",
@@ -92,11 +107,11 @@ var zh = map[string]string{
 	"language":          "语言 / Language",
 	"lang_zh":           "中文",
 	"lang_en":           "English",
-	"about":             "关于 Swell-Box",
+	"about":             "关于 %s",
 	"quit":              "退出",
-	"tooltip_stopped":   "Swell-Box — 已停止",
-	"tooltip_running":   "Swell-Box — 运行中",
-	"app_running":       "Swell-Box 已启动，请查看系统托盘图标。",
+	"tooltip_stopped":   "%s — 已停止",
+	"tooltip_running":   "%s — 运行中",
+	"app_running":       "%s 已启动，请查看系统托盘图标。",
 	"starting":          "正在启动代理…",
 	"started":           "代理已启动",
 	"stopped":           "代理已停止",
@@ -136,7 +151,7 @@ var zh = map[string]string{
 	"upd_core_latest":   "内核已是最新：%s",
 	"upd_core_avail":    "发现新内核 %s（当前 %s），正在下载…",
 	"upd_app_ver":       "程序版本：%s",
-	"upd_app_manual":    "程序更新：当前 %s（发布渠道未配置，请手动替换 Swell-Box.exe）",
+	"upd_app_manual":    "程序更新：当前 %s（发布渠道未配置，请手动替换程序）",
 	"upd_app_latest":    "程序已是最新：%s",
 	"upd_app_avail":      "发现新程序 %s，正在下载并安装…",
 	"upd_app_downloading": "正在下载程序更新 %s…",
@@ -183,7 +198,7 @@ var en = map[string]string{
 	"tun_mode":          "TUN Mode (Global)",
 	"tun_on":            "TUN on: global capture (system proxy disabled)",
 	"tun_off":           "TUN mode off",
-	"tun_admin_hint":    "Hint: TUN usually needs Swell-Box run as Administrator, or start may fail",
+	"tun_admin_hint":    "Hint: TUN usually needs %s run as Administrator, or start may fail",
 	"tun_restarted":     "TUN setting changed — proxy reloaded",
 	"configs":           "Configs",
 	"open_data":         "Open Data Folder",
@@ -197,11 +212,11 @@ var en = map[string]string{
 	"language":          "Language / 语言",
 	"lang_zh":           "中文",
 	"lang_en":           "English",
-	"about":             "About Swell-Box",
+	"about":             "About %s",
 	"quit":              "Quit",
-	"tooltip_stopped":   "Swell-Box — stopped",
-	"tooltip_running":   "Swell-Box — running",
-	"app_running":       "Swell-Box is running. Check the system tray icon.",
+	"tooltip_stopped":   "%s — stopped",
+	"tooltip_running":   "%s — running",
+	"app_running":       "%s is running. Check the system tray icon.",
 	"starting":          "Starting proxy…",
 	"started":           "Proxy started",
 	"stopped":           "Proxy stopped",
@@ -241,7 +256,7 @@ var en = map[string]string{
 	"upd_core_latest":   "Core is up to date: %s",
 	"upd_core_avail":    "New core %s (current %s), downloading…",
 	"upd_app_ver":       "App version: %s",
-	"upd_app_manual":    "App update: v%s (no release channel; replace Swell-Box.exe manually)",
+	"upd_app_manual":    "App update: v%s (no release channel; replace the app manually)",
 	"upd_app_latest":    "App is up to date: %s",
 	"upd_app_avail":      "New app %s found — downloading…",
 	"upd_app_downloading": "Downloading app update %s…",
