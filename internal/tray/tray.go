@@ -652,20 +652,46 @@ func (c *Controller) doCheckApp() {
 		notify.Info(paths.AppName, fmt.Sprintf(i18n.T("upd_app_manual"), res.Current))
 		return
 	}
-	if res.HasUpdate {
-		notify.Info(paths.AppName, fmt.Sprintf(i18n.T("upd_app_avail"), res.Latest))
-		if res.DownloadURL != "" {
-			_ = app.OpenURL(res.DownloadURL)
-		} else if update.AppReleaseRepo != "" {
-			_ = app.OpenURL("https://github.com/" + update.AppReleaseRepo + "/releases")
+	if res.Message != "" && !res.HasUpdate {
+		// network / API error
+		notify.Error(paths.AppName, i18n.T("upd_app_fail")+res.Message)
+		return
+	}
+	if !res.HasUpdate {
+		if res.Latest != "" {
+			notify.Info(paths.AppName, fmt.Sprintf(i18n.T("upd_app_latest"), res.Current))
+			return
 		}
+		notify.Info(paths.AppName, fmt.Sprintf(i18n.T("upd_app_ver"), res.Current))
 		return
 	}
-	if res.Latest != "" {
-		notify.Info(paths.AppName, fmt.Sprintf(i18n.T("upd_app_latest"), res.Current))
+
+	// Has update
+	if res.DownloadURL == "" {
+		notify.Info(paths.AppName, fmt.Sprintf(i18n.T("upd_app_open_page"), res.Latest))
+		_ = app.OpenURL("https://github.com/" + update.AppReleaseRepo + "/releases")
 		return
 	}
-	notify.Info(paths.AppName, fmt.Sprintf(i18n.T("upd_app_ver"), res.Current))
+
+	notify.Info(paths.AppName, fmt.Sprintf(i18n.T("upd_app_downloading"), res.Latest))
+	err := update.ApplyAppUpdate(res.DownloadURL, res.IsZip, func() error {
+		return c.stopProxy()
+	})
+	if err != nil {
+		// Fallback: open browser for manual download
+		notify.Error(paths.AppName, i18n.T("upd_app_fail")+err.Error())
+		notify.Info(paths.AppName, fmt.Sprintf(i18n.T("upd_app_open_page"), res.Latest))
+		_ = app.OpenURL(res.DownloadURL)
+		return
+	}
+	notify.Info(paths.AppName, fmt.Sprintf(i18n.T("upd_app_ok"), res.Latest))
+	// Exit so the updater can replace the locked .exe and relaunch.
+	go func() {
+		time.Sleep(800 * time.Millisecond)
+		c.shutdown()
+		systray.Quit()
+		time.AfterFunc(400*time.Millisecond, func() { os.Exit(0) })
+	}()
 }
 
 // local helper to avoid exporting versionLess from update with wrong name
