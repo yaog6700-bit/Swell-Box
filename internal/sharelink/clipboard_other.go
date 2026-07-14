@@ -10,16 +10,29 @@ import (
 )
 
 func ReadClipboard() (string, error) {
-	var cmd *exec.Cmd
 	switch runtime.GOOS {
 	case "darwin":
-		cmd = exec.Command("pbpaste")
+		out, err := exec.Command("pbpaste").Output()
+		if err != nil {
+			return "", fmt.Errorf("clipboard: %w", err)
+		}
+		return strings.TrimSpace(string(out)), nil
 	default:
-		cmd = exec.Command("xclip", "-selection", "clipboard", "-o")
+		// Linux: try Wayland then X11 tools
+		for _, attempt := range [][]string{
+			{"wl-paste", "--no-newline"},
+			{"xclip", "-selection", "clipboard", "-o"},
+			{"xsel", "--clipboard", "--output"},
+		} {
+			if _, err := exec.LookPath(attempt[0]); err != nil {
+				continue
+			}
+			out, err := exec.Command(attempt[0], attempt[1:]...).Output()
+			if err != nil {
+				continue
+			}
+			return strings.TrimSpace(string(out)), nil
+		}
+		return "", fmt.Errorf("clipboard: need wl-paste, xclip, or xsel")
 	}
-	out, err := cmd.Output()
-	if err != nil {
-		return "", fmt.Errorf("clipboard: %w", err)
-	}
-	return strings.TrimSpace(string(out)), nil
 }

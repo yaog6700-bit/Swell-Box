@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Optional tag to build (e.g. v0.2.2). Leave empty for artifact-only."
+        description: "Optional tag to build (e.g. v0.2.4). Leave empty for artifact-only."
         required: false
         default: ""
       core_channel:
@@ -19,21 +19,15 @@ permissions:
   contents: write
 
 jobs:
-  build-windows:
-    name: Build Windows amd64 (with core)
-    runs-on: windows-latest
+  meta:
+    name: Resolve version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.ver.outputs.version }}
+      tag: ${{ steps.ver.outputs.tag }}
+      core_channel: ${{ steps.ver.outputs.core_channel }}
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: "1.22.x"
-          cache: true
-
-      - name: Version
-        id: ver
+      - id: ver
         shell: bash
         run: |
           if [[ "${{ github.ref_type }}" == "tag" ]]; then
@@ -53,117 +47,186 @@ jobs:
           if [[ -z "$CH" ]]; then CH=pre; fi
           echo "core_channel=$CH" >> "$GITHUB_OUTPUT"
 
-      - name: Embed Windows icon (rsrc)
+  build:
+    name: ${{ matrix.goos }}-${{ matrix.goarch }}
+    needs: meta
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - goos: windows
+            goarch: amd64
+            runner: windows-latest
+            ext: .exe
+            core_bin: sing-box.exe
+          - goos: windows
+            goarch: arm64
+            runner: windows-latest
+            ext: .exe
+            core_bin: sing-box.exe
+          - goos: darwin
+            goarch: arm64
+            runner: macos-14
+            ext: ""
+            core_bin: sing-box
+          - goos: linux
+            goarch: amd64
+            runner: ubuntu-latest
+            ext: ""
+            core_bin: sing-box
+          - goos: linux
+            goarch: arm64
+            runner: ubuntu-24.04-arm
+            ext: ""
+            core_bin: sing-box
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.22.x"
+          cache: true
+
+      - name: Install Linux tray deps
+        if: matrix.goos == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-3-dev libayatana-appindicator3-dev
+
+      - name: Embed Windows icon
+        if: matrix.goos == 'windows'
         shell: pwsh
         run: |
           go install github.com/akavel/rsrc@latest
           $rsrc = Join-Path (go env GOPATH) "bin\rsrc.exe"
-          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          $arch = "${{ matrix.goarch }}"
           if (Test-Path .\internal\seed\app.ico) {
-            & $rsrc -ico .\internal\seed\app.ico -arch amd64 -o .\cmd\swellbox\rsrc_windows_amd64.syso
+            & $rsrc -ico .\internal\seed\app.ico -arch $arch -o ".\cmd\swellbox\rsrc_windows_${arch}.syso"
           }
 
       - name: Build SWELL Box
-        shell: pwsh
+        shell: bash
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: ${{ matrix.goos == 'windows' && '0' || '1' }}
         run: |
-          $ver = "${{ steps.ver.outputs.version }}"
-          $ld = "-H=windowsgui -s -w -X github.com/swell-app/swellbox/internal/update.AppVersion=$ver"
-          go build -ldflags $ld -o dist/SWELL-Box.exe ./cmd/swellbox
+          mkdir -p dist/package
+          VER="${{ needs.meta.outputs.version }}"
+          REPO="yaog6700-bit/Swell-box"
+          LDFLAGS="-s -w -X github.com/swell-app/swellbox/internal/update.AppVersion=${VER} -X github.com/swell-app/swellbox/internal/update.AppReleaseRepo=${REPO}"
+          if [ "${{ matrix.goos }}" = "windows" ]; then
+            LDFLAGS="-H=windowsgui ${LDFLAGS}"
+          fi
+          OUT="dist/SWELL-Box${{ matrix.ext }}"
+          go build -ldflags "$LDFLAGS" -o "$OUT" ./cmd/swellbox
+          cp "$OUT" dist/package/
+          ls -la "$OUT"
 
       - name: Bundle official sing-box core
-        shell: pwsh
+        shell: bash
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CORE_BIN: ${{ matrix.core_bin }}
+          CLIENT_EXT: ${{ matrix.ext }}
+          CHANNEL: ${{ needs.meta.outputs.core_channel }}
         run: |
-          $channel = "${{ steps.ver.outputs.core_channel }}"
-          Write-Host "core channel=$channel"
-          if ($channel -eq "stable") {
-            $api = "https://api.github.com/repos/SagerNet/sing-box/releases/latest"
-            $rel = Invoke-RestMethod -Uri $api -Headers @{ "User-Agent" = "SWELLBox-CI"; "Accept" = "application/vnd.github+json" }
-          } else {
-            $list = Invoke-RestMethod -Uri "https://api.github.com/repos/SagerNet/sing-box/releases?per_page=20" -Headers @{ "User-Agent" = "SWELLBox-CI"; "Accept" = "application/vnd.github+json" }
-            $rel = $list | Where-Object { -not $_.draft } | Select-Object -First 1
-          }
-          Write-Host "core tag=$($rel.tag_name)"
-          $asset = $rel.assets | Where-Object {
-            $_.name -match 'windows-amd64\.zip$' -and $_.name -notmatch 'legacy'
-          } | Select-Object -First 1
-          if (-not $asset) {
-            $asset = $rel.assets | Where-Object { $_.name -match 'windows-amd64' -and $_.name -like '*.zip' } | Select-Object -First 1
-          }
-          if (-not $asset) { throw "no windows-amd64 zip in $($rel.tag_name)" }
-          Write-Host "asset=$($asset.name)"
-          $zip = "dist\sing-box-core.zip"
-          Invoke-WebRequest -Uri $asset.browser_download_url -OutFile $zip -Headers @{ "User-Agent" = "SWELLBox-CI" }
-          Expand-Archive -Path $zip -DestinationPath dist\core-extract -Force
-          $core = Get-ChildItem -Path dist\core-extract -Recurse -Filter sing-box.exe | Select-Object -First 1
-          if (-not $core) { throw "sing-box.exe not found in archive" }
-          Copy-Item $core.FullName dist\sing-box.exe -Force
-          Get-ChildItem -Path dist\core-extract -Recurse -Filter *.dll | ForEach-Object {
-            Copy-Item $_.FullName "dist\$($_.Name)" -Force
-          }
-          # package layout for users: unzip and run
-          New-Item -ItemType Directory -Force -Path dist\package | Out-Null
-          Copy-Item dist\SWELL-Box.exe dist\package\ -Force
-          Copy-Item dist\sing-box.exe dist\package\ -Force
-          Get-ChildItem dist\*.dll -ErrorAction SilentlyContinue | ForEach-Object {
-            Copy-Item $_.FullName dist\package\ -Force
-          }
-          @"
-          SWELL Box — offline package
-          1. Extract this folder
-          2. Run SWELL-Box.exe
-          3. sing-box.exe in the same folder is used as core (no download needed)
+          set -euo pipefail
+          if command -v python3 >/dev/null 2>&1; then PY=python3; else PY=python; fi
+          export PLATFORM="${GOOS}-${GOARCH}"
+          export UA="SWELLBox-CI"
+          mkdir -p dist
 
-          Data: %USERPROFILE%\.swellbox
-          "@ | Set-Content dist\package\README.txt -Encoding UTF8
-          echo "core_tag=$($rel.tag_name)" >> $env:GITHUB_OUTPUT
+          if [ "$CHANNEL" = "stable" ]; then
+            curl -fsSL -H "User-Agent: $UA" -H "Accept: application/vnd.github+json" \
+              "https://api.github.com/repos/SagerNet/sing-box/releases/latest" -o dist/rel.json
+          else
+            curl -fsSL -H "User-Agent: $UA" -H "Accept: application/vnd.github+json" \
+              "https://api.github.com/repos/SagerNet/sing-box/releases?per_page=20" -o dist/rel-list.json
+            $PY -c "import json; arr=json.load(open('dist/rel-list.json',encoding='utf-8')); json.dump(next(x for x in arr if not x.get('draft')), open('dist/rel.json','w',encoding='utf-8'))"
+          fi
 
-      - name: Zip packages
-        shell: pwsh
-        run: |
-          # Full offline zip (recommended)
-          if (Test-Path dist\SWELL-Box-windows-amd64-full.zip) { Remove-Item dist\SWELL-Box-windows-amd64-full.zip -Force }
-          Compress-Archive -Path dist\package\* -DestinationPath dist\SWELL-Box-windows-amd64-full.zip -Force
-          # Thin client-only zip (legacy)
-          Compress-Archive -Path dist\SWELL-Box.exe -DestinationPath dist\SWELL-Box-windows-amd64.zip -Force
-          Get-ChildItem dist\*.zip, dist\SWELL-Box.exe, dist\sing-box.exe | Format-Table Name, Length
+          $PY scripts/ci_bundle_core.py
+          ls -la "dist/SWELL-Box-${PLATFORM}-full.zip" "dist/SWELL-Box${CLIENT_EXT}"
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: SWELL-Box-windows-amd64
+          name: SWELL-Box-${{ matrix.goos }}-${{ matrix.goarch }}
           path: |
-            dist/SWELL-Box.exe
-            dist/sing-box.exe
-            dist/SWELL-Box-windows-amd64-full.zip
-            dist/SWELL-Box-windows-amd64.zip
+            dist/SWELL-Box${{ matrix.ext }}
+            dist/SWELL-Box-${{ matrix.goos }}-${{ matrix.goarch }}-full.zip
           if-no-files-found: error
 
+  release:
+    name: Publish GitHub Release
+    needs: [meta, build]
+    if: needs.meta.outputs.tag != ''
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+
+      - name: Flatten assets
+        shell: bash
+        run: |
+          mkdir -p out
+          find release-assets -type f -print
+          for d in release-assets/*; do
+            [ -d "$d" ] || continue
+            base=$(basename "$d")
+            platform=${base#SWELL-Box-}
+            for f in "$d"/*; do
+              [ -f "$f" ] || continue
+              name=$(basename "$f")
+              if [[ "$name" == *-full.zip ]]; then
+                cp "$f" "out/$name"
+              elif [[ "$name" == SWELL-Box.exe ]]; then
+                cp "$f" "out/SWELL-Box-${platform}.exe"
+              elif [[ "$name" == SWELL-Box ]]; then
+                cp "$f" "out/SWELL-Box-${platform}"
+              else
+                cp "$f" "out/$name"
+              fi
+            done
+          done
+          ls -la out/
+
       - name: Create GitHub Release
-        if: steps.ver.outputs.tag != ''
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ steps.ver.outputs.tag }}
-          name: SWELL Box ${{ steps.ver.outputs.tag }}
+          tag_name: ${{ needs.meta.outputs.tag }}
+          name: SWELL Box ${{ needs.meta.outputs.tag }}
           generate_release_notes: true
-          files: |
-            dist/SWELL-Box-windows-amd64-full.zip
-            dist/SWELL-Box.exe
-            dist/sing-box.exe
-            dist/SWELL-Box-windows-amd64.zip
+          files: out/*
           body: |
-            ## SWELL Box ${{ steps.ver.outputs.tag }}
+            ## SWELL Box ${{ needs.meta.outputs.tag }}
 
-            ### 推荐下载（完整包，可离线）
-            - **SWELL-Box-windows-amd64-full.zip** — 含 `SWELL-Box.exe` + `sing-box.exe`（内核）
-              解压后同目录运行，**无需外网下载内核**
+            ### 推荐：完整离线包（内核在 zip 内，不单独发布 sing-box）
 
-            ### 其它
-            - **SWELL-Box.exe** — 仅客户端（首次启动有网可自动下内核）
-            - **sing-box.exe** — 官方内核单独文件
+            | 平台 | 架构 | 文件 |
+            |------|------|------|
+            | Windows | amd64 | `SWELL-Box-windows-amd64-full.zip` |
+            | Windows | arm64 | `SWELL-Box-windows-arm64-full.zip` |
+            | macOS | arm64 (Apple Silicon) | `SWELL-Box-darwin-arm64-full.zip` |
+            | Linux | amd64 | `SWELL-Box-linux-amd64-full.zip` |
+            | Linux | arm64 | `SWELL-Box-linux-arm64-full.zip` |
+
+            解压后同目录运行客户端；`sing-box` / `sing-box.exe` 在包内。
+
+            ### 仅客户端（带平台标签）
+            - `SWELL-Box-windows-amd64.exe` / `SWELL-Box-windows-arm64.exe`
+            - `SWELL-Box-darwin-arm64`
+            - `SWELL-Box-linux-amd64` / `SWELL-Box-linux-arm64`
 
             ### 说明
-            - 用户数据：`%USERPROFILE%\.swellbox`（节点配置**不会**上传 GitHub）
-            - 添加节点后点「启动」：若缺少内核会先用同目录内核，再尝试联网下载
-            - Geo 规则已内置；可在托盘「更新 Geo 规则」在线更新
+            - 用户数据：`~/.swellbox`（Windows：`%USERPROFILE%\.swellbox`）
+            - 官方内核**不会**作为独立 Release 附件；只打进 `*-full.zip`
+            - macOS：仅 Apple Silicon（arm64）
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

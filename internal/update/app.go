@@ -8,11 +8,11 @@ import (
 
 // AppCheckResult is the outcome of an app update check.
 type AppCheckResult struct {
-	Current    string
-	Latest     string
-	HasUpdate  bool
+	Current     string
+	Latest      string
+	HasUpdate   bool
 	DownloadURL string
-	Message    string
+	Message     string
 }
 
 // CheckApp checks GitHub releases for a newer SWELL Box build when AppReleaseRepo is set.
@@ -30,18 +30,35 @@ func CheckApp() *AppCheckResult {
 	}
 	res.Latest = strings.TrimPrefix(rel.TagName, "v")
 	res.HasUpdate = VersionLess(res.Current, res.Latest)
-	// pick asset
+	// Prefer full offline zip for this platform, then bare client binary.
 	goos, goarch := runtime.GOOS, runtime.GOARCH
+	platform := goos + "-" + goarch
+	var fullURL, thinURL string
 	for _, a := range rel.Assets {
 		n := strings.ToLower(a.Name)
-		if strings.Contains(n, goos) && strings.Contains(n, goarch) {
-			res.DownloadURL = a.BrowserDownloadURL
-			break
+		if !strings.Contains(n, platform) {
+			// Windows bare client may be named SWELL-Box.exe without arch tag
+			if goos == "windows" && strings.HasSuffix(n, ".exe") && strings.Contains(n, "swell") && thinURL == "" {
+				thinURL = a.BrowserDownloadURL
+			}
+			continue
 		}
-		if goos == "windows" && strings.Contains(n, "windows") && strings.HasSuffix(n, ".exe") {
-			res.DownloadURL = a.BrowserDownloadURL
-			break
+		if strings.Contains(n, "full") && strings.HasSuffix(n, ".zip") {
+			fullURL = a.BrowserDownloadURL
+		} else if strings.HasSuffix(n, ".zip") || strings.HasSuffix(n, ".tar.gz") || strings.HasSuffix(n, ".tgz") {
+			if thinURL == "" {
+				thinURL = a.BrowserDownloadURL
+			}
+		} else if goos == "windows" && strings.HasSuffix(n, ".exe") {
+			if thinURL == "" {
+				thinURL = a.BrowserDownloadURL
+			}
 		}
+	}
+	if fullURL != "" {
+		res.DownloadURL = fullURL
+	} else {
+		res.DownloadURL = thinURL
 	}
 	return res
 }

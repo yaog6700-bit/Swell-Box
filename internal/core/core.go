@@ -75,7 +75,7 @@ func (m *Manager) ResolveBinary() (string, error) {
 
 	return "", fmt.Errorf(
 		"sing-box binary not found\n"+
-			"Put %s next to swellbox, or in %%USERPROFILE%%\\.swellbox\\bin, or on PATH",
+			"Put %s next to SWELL-Box, or in ~/.swellbox/bin (Windows: %%USERPROFILE%%\\.swellbox\\bin), or on PATH",
 		name,
 	)
 }

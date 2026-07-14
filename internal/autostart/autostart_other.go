@@ -1,8 +1,6 @@
-//go:build !windows
+//go:build !windows && !darwin && !linux
 
 package autostart
-
-// Stub for non-Windows (can add macOS LaunchAgent later).
 
 func Enabled() bool { return false }
 

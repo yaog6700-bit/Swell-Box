@@ -1,18 +1,28 @@
 # SWELL Box
 
-**SWELL Box** is a lightweight Windows system-tray client for [sing-box](https://github.com/SagerNet/sing-box).
+**SWELL Box** is a lightweight system-tray client for [sing-box](https://github.com/SagerNet/sing-box).
 
-Brand: **SWELL** · Binary: `swellbox` / `SWELL-Box.exe`
+**Repository:** [github.com/yaog6700-bit/Swell-box](https://github.com/yaog6700-bit/Swell-box)
+
+Brand: **SWELL** · Binary: `SWELL-Box` / `SWELL-Box.exe`
 
 > Architecture: **tray shell (Go) + official sing-box binary (subprocess) + official Dashboard**.  
 > Inspired by [daodao97/SingBoxClient](https://github.com/daodao97/SingBoxClient), rewritten without vendoring the core.
+
+## Supported platforms
+
+| OS | Architectures | Notes |
+|----|---------------|--------|
+| **Windows** | amd64, arm64 | Full tray + system proxy + autostart |
+| **macOS** | arm64 only | Apple Silicon (`M1/M2/M3…`) |
+| **Linux** | amd64, arm64 | Needs tray/appindicator libs at runtime |
 
 ## Features
 
 - Start / Stop / Restart proxy from the tray
 - Official Dashboard (`http://127.0.0.1:9091/dashboard/`)
 - Import node (`ss://` / `vless://`), subscription URL, or full config JSON
-- Multi-config switch + open in Notepad
+- Multi-config switch + open in editor
 - Default split routing: CN direct / others via proxy (local `geosite-cn.srs` / `geoip-cn.srs`)
 - Update core (stable / pre-release), update Geo rules
 - Launch at login, auto-connect, system proxy
@@ -20,10 +30,10 @@ Brand: **SWELL** · Binary: `swellbox` / `SWELL-Box.exe`
 
 ## Requirements
 
-- Windows 10+
+- Windows 10+, macOS 12+ (Apple Silicon), or a modern Linux desktop
 - Network once if core is missing (auto-download official `sing-box`)
 
-User data: `%USERPROFILE%\.swellbox\`
+User data: `~/.swellbox/` (Windows: `%USERPROFILE%\.swellbox\`)
 
 ## Build
 
@@ -36,37 +46,54 @@ go mod tidy
 .\scripts\build.ps1
 ```
 
+### Cross targets (any OS with Go)
+
+```bash
+# examples
+GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -ldflags "-H=windowsgui -s -w" -o dist/SWELL-Box.exe ./cmd/swellbox
+GOOS=darwin  GOARCH=arm64 CGO_ENABLED=1 go build -ldflags "-s -w" -o dist/SWELL-Box ./cmd/swellbox
+GOOS=linux   GOARCH=amd64 CGO_ENABLED=1 go build -ldflags "-s -w" -o dist/SWELL-Box ./cmd/swellbox
+```
+
+> Linux / macOS tray builds need CGO. On Linux install `libgtk-3-dev` and `libayatana-appindicator3-dev`.
+
 ### GitHub Actions (recommended)
 
 | Workflow | Trigger | Output |
 |----------|---------|--------|
-| **CI** | push / PR to `main` | compile check |
-| **Release** | push tag `v*` | full offline zip + client |
+| **CI** | push / PR to `main` | compile check for all 5 targets |
+| **Release** | push tag `v*` | full offline zips + clients for all targets |
 
 Create a release:
 
 ```bash
-git tag v0.2.2
-git push origin v0.2.2
+git tag v0.2.4
+git push origin v0.2.4
 ```
 
-**Release assets:**
+**Release assets (5 platforms):**
 
 | File | Contents |
 |------|----------|
-| `SWELL-Box-windows-amd64-full.zip` | **Recommended** — `SWELL-Box.exe` + `sing-box.exe` (no download needed) |
-| `SWELL-Box.exe` | Client only (Start will use next-to-exe core, or download if online) |
+| `SWELL-Box-windows-amd64-full.zip` | Win x64 client + `sing-box.exe` |
+| `SWELL-Box-windows-arm64-full.zip` | Win ARM64 client + `sing-box.exe` |
+| `SWELL-Box-darwin-arm64-full.zip` | macOS Apple Silicon + `sing-box` |
+| `SWELL-Box-linux-amd64-full.zip` | Linux x64 + `sing-box` |
+| `SWELL-Box-linux-arm64-full.zip` | Linux ARM64 + `sing-box` |
 
-Put `sing-box.exe` in the **same folder** as `SWELL-Box.exe` for offline use.
+`sing-box` is **only inside the full zip**, not uploaded as a separate Release file.
 
-Adding nodes does not download the core; **Start** does (local first, then network).## Usage
+Also published: thin clients `SWELL-Box-<os>-<arch>[.exe]` (no core; Start can download if online).
 
-1. Run `SWELL-Box.exe` (tray icon)
-2. **Add** → import node / subscription / config
-3. **Start**
-4. **Dashboard** for connections / selectors
+## Usage
 
-Custom configs: put `config*.json` under `%USERPROFILE%\.swellbox\` or use **Import Config File**. Routing in imported files is left as-is.
+1. Extract the full zip for your platform
+2. Run `SWELL-Box` / `SWELL-Box.exe` (tray icon)
+3. **Add** → import node / subscription / config
+4. **Start**
+5. **Dashboard** for connections / selectors
+
+Custom configs: put `config*.json` under `~/.swellbox/` or use **Import Config File**. Routing in imported files is left as-is.
 
 ## License
 
