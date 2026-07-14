@@ -249,7 +249,12 @@ func (c *Controller) loop() {
 		case <-c.mLangEN.ClickedCh:
 			c.switchLang(i18n.EN)
 		case <-c.mAbout.ClickedCh:
-			_ = app.OpenURL("https://github.com/SagerNet/sing-box")
+			// Project homepage (not the sing-box core repo)
+			aboutURL := "https://github.com/yaog6700-bit/Swell-Box"
+			if update.AppReleaseRepo != "" {
+				aboutURL = "https://github.com/" + update.AppReleaseRepo
+			}
+			_ = app.OpenURL(aboutURL)
 		case <-c.mQuit.ClickedCh:
 			go func() {
 				c.shutdown()
