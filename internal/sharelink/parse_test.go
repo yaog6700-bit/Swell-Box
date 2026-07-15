@@ -238,6 +238,32 @@ func TestParseSSRRejected(t *testing.T) {
 	}
 }
 
+func TestParseNaiveHTTPSShare(t *testing.T) {
+	// Common real-world form (not naive+https://)
+	link := "https://user123:pass123@np.128128.best:443#naive"
+	nodes, err := Parse(link)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ob := nodes[0].Outbound
+	if ob["type"] != "naive" {
+		t.Fatalf("type=%v want naive", ob["type"])
+	}
+	if nodes[0].Tag != "naive" {
+		t.Fatalf("tag=%s", nodes[0].Tag)
+	}
+	if ob["server"] != "np.128128.best" || ob["server_port"] != 443 {
+		t.Fatalf("server=%v:%v", ob["server"], ob["server_port"])
+	}
+	if ob["username"] != "user123" || ob["password"] != "pass123" {
+		t.Fatalf("auth=%v/%v", ob["username"], ob["password"])
+	}
+	tls, _ := ob["tls"].(map[string]any)
+	if tls == nil || tls["enabled"] != true || tls["server_name"] != "np.128128.best" {
+		t.Fatalf("tls=%v", ob["tls"])
+	}
+}
+
 func TestParseClashSnell6(t *testing.T) {
 	// Real-world Clash classical line (Snell v6)
 	line := "Snell6 = snell, 216.236.7.38, 26005, psk = tRA3iO4bPnHz6rPhojK1r, version = 6, reuse = true, tfo = true"

@@ -111,7 +111,15 @@ func parseOne(line string) (Node, error) {
 		return parseNaive(line)
 	case strings.HasPrefix(lower, "ssh://"):
 		return parseSSH(line)
-	case strings.HasPrefix(lower, "http://"), strings.HasPrefix(lower, "https://"):
+	case strings.HasPrefix(lower, "https://"):
+		// NaiveProxy is commonly shared as:
+		//   https://user:pass@host:port#name
+		// Prefer naive when credentials are present; bare host:port stays HTTP proxy.
+		if looksLikeNaiveHTTPS(line) {
+			return parseNaive(line)
+		}
+		return parseHTTPProxy(line)
+	case strings.HasPrefix(lower, "http://"):
 		return parseHTTPProxy(line)
 	default:
 		// Clash classical one-line: Name = type, server, port, key = value, ...
@@ -937,10 +945,33 @@ func parseSnell(line string) (Node, error) {
 
 // ─── NaiveProxy ──────────────────────────────────────────────────────────────
 
+// looksLikeNaiveHTTPS detects the common share form:
+//
+//	https://user:pass@host:port#name
+//
+// (as opposed to a bare HTTP CONNECT proxy without credentials).
+func looksLikeNaiveHTTPS(line string) bool {
+	u, err := url.Parse(line)
+	if err != nil || u == nil {
+		return false
+	}
+	if !strings.EqualFold(u.Scheme, "https") {
+		return false
+	}
+	if u.User == nil || u.User.Username() == "" {
+		return false
+	}
+	// must look like a proxy endpoint (host + optional port, not a long subscription path)
+	return isLikelyHTTPProxyShare(u)
+}
+
 func parseNaive(line string) (Node, error) {
-	// naive+https://user:pass@host:port
-	// naive+quic://user:pass@host:port
-	// naive://user:pass@host:port (assume https)
+	// Supported forms:
+	//   https://user:pass@host:port#name          (common share form)
+	//   naive+https://user:pass@host:port
+	//   naive+quic://user:pass@host:port
+	//   naive+http://user:pass@host:port
+	//   naive://user:pass@host:port               (assume https)
 	normalized := line
 	lower := strings.ToLower(line)
 	quic := false
@@ -954,6 +985,9 @@ func parseNaive(line string) (Node, error) {
 		quic = true
 	case strings.HasPrefix(lower, "naive://"):
 		normalized = "https://" + line[len("naive://"):]
+	case strings.HasPrefix(lower, "https://"):
+		// already https://user:pass@host — keep as-is
+		normalized = line
 	}
 	u, err := url.Parse(normalized)
 	if err != nil {
@@ -962,10 +996,17 @@ func parseNaive(line string) (Node, error) {
 	host := u.Hostname()
 	port, _ := strconv.Atoi(u.Port())
 	if port == 0 {
-		port = 443
+		if strings.EqualFold(u.Scheme, "http") {
+			port = 80
+		} else {
+			port = 443
+		}
 	}
 	if host == "" {
 		return Node{}, fmt.Errorf("naive: incomplete fields")
+	}
+	if u.User == nil || u.User.Username() == "" {
+		return Node{}, fmt.Errorf("naive: missing username")
 	}
 	tag := tagFromFragment(u.Fragment, "naive-"+host)
 	ob := map[string]any{
@@ -973,21 +1014,21 @@ func parseNaive(line string) (Node, error) {
 		"tag":         tag,
 		"server":      host,
 		"server_port": port,
+		"username":    u.User.Username(),
 	}
-	if u.User != nil {
-		ob["username"] = u.User.Username()
-		if p, ok := u.User.Password(); ok {
-			ob["password"] = p
-		}
+	if p, ok := u.User.Password(); ok {
+		ob["password"] = p
 	}
 	if quic {
 		ob["quic"] = true
 	}
-	// TLS required for naive
-	sni := firstNonEmpty(u.Query().Get("sni"), host)
-	ob["tls"] = map[string]any{
-		"enabled":     true,
-		"server_name": sni,
+	// TLS for https / quic (naive over plain http is rare but allowed without tls block)
+	if !strings.EqualFold(u.Scheme, "http") || quic {
+		sni := firstNonEmpty(u.Query().Get("sni"), host)
+		ob["tls"] = map[string]any{
+			"enabled":     true,
+			"server_name": sni,
+		}
 	}
 	return Node{Tag: tag, Outbound: ob}, nil
 }
