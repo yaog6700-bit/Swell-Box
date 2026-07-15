@@ -11,7 +11,8 @@ import (
 	"github.com/swell-app/swellbox/internal/sharelink"
 )
 
-// FetchURL downloads a subscription URL and parses share links (ss/vless).
+// FetchURL downloads a subscription URL and parses share links
+// (ss/vmess/vless/trojan/hysteria2/tuic/… — see sharelink.SupportedSchemes).
 // Supports plain text lists and common base64-encoded v2ray-style subscriptions.
 func FetchURL(rawURL string) ([]sharelink.Node, error) {
 	rawURL = strings.TrimSpace(rawURL)
@@ -90,7 +91,7 @@ func ParseBody(body string) ([]sharelink.Node, error) {
 		all = append(all, ns...)
 	}
 	if len(all) == 0 {
-		return nil, fmt.Errorf("no ss:// or vless:// nodes found in subscription")
+		return nil, fmt.Errorf("no supported share links found in subscription (ss/vmess/vless/trojan/hysteria2/tuic/…)")
 	}
 	return all, nil
 }

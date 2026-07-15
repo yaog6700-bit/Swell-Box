@@ -27,8 +27,11 @@ import (
 
 // Icons holds tray icon bytes.
 type Icons struct {
-	On  []byte
-	Off []byte
+	On  []byte // monochrome — system proxy / normal mode, running
+	Off []byte // monochrome — stopped
+	// Tun is the color brand logo used when TUN mode is on and proxy is running.
+	// If empty, On is used as fallback.
+	Tun []byte
 }
 
 // Controller wires tray UI to core manager.
@@ -368,6 +371,7 @@ func (c *Controller) toggleSysProxy() {
 		if c.mTunMode != nil {
 			c.mTunMode.Uncheck()
 		}
+		c.refreshTrayIcon()
 		if c.Core != nil && c.Core.Running() {
 			c.reloadProxyForTun()
 		}
@@ -419,6 +423,8 @@ func (c *Controller) toggleTunMode() {
 		_ = config.SaveAppSettings(c.App)
 		notify.Info(paths.AppName, i18n.T("tun_off"))
 	}
+	// Icon reflects TUN only while running; refresh immediately (reload also re-applies).
+	c.refreshTrayIcon()
 	if c.Core != nil && c.Core.Running() {
 		c.reloadProxyForTun()
 	}
@@ -929,6 +935,7 @@ func (c *Controller) applyTrayIcon(running bool) {
 	// Windows: only SetIcon (full color). Avoid TemplateIcon (can look monochrome).
 	on := c.Icons.On
 	off := c.Icons.Off
+	tun := c.Icons.Tun
 	if len(off) == 0 {
 		off = on
 	}
@@ -937,12 +944,23 @@ func (c *Controller) applyTrayIcon(running bool) {
 	}
 	icon := off
 	if running {
-		icon = on
+		// TUN mode → color logo; other proxy modes keep monochrome On.
+		if c.App != nil && c.App.TunMode && len(tun) > 0 {
+			icon = tun
+		} else {
+			icon = on
+		}
 	}
 	if len(icon) == 0 {
 		return
 	}
 	systray.SetIcon(icon)
+}
+
+// refreshTrayIcon updates the tray glyph from current core + TUN state.
+func (c *Controller) refreshTrayIcon() {
+	running := c.Core != nil && c.Core.Running()
+	c.applyTrayIcon(running)
 }
 
 func (c *Controller) setStatus(running bool, errMsg string) {

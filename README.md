@@ -21,7 +21,7 @@ Brand: **Swell** · Binary: `Swell-Box` / `Swell-Box.exe`
 
 - Start / Stop / Restart proxy from the tray
 - Official Dashboard (`http://127.0.0.1:9091/dashboard/`)
-- Import node (`ss://` / `vless://`), subscription URL, or full config JSON
+- Import node share links (`ss` / `vmess` / `vless` / `trojan` / `hysteria` / `hysteria2` / `tuic` / `anytls` / `wireguard` / `socks` / `http` / `snell` / `naive` / `ssh`), subscription URL, or full config JSON
 - Multi-config switch + open in editor
 - Default split routing: CN direct / others via proxy (local `geosite-cn.srs` / `geoip-cn.srs`)
 - Update core (stable / pre-release), update Geo rules

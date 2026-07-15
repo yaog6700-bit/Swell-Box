@@ -36,9 +36,11 @@ func main() {
 	if runtime.GOOS == "windows" {
 		icons.On = seed.IconOnICO
 		icons.Off = seed.IconOffICO
+		icons.Tun = seed.IconTunICO
 	} else {
 		icons.On = seed.IconOnPNG
 		icons.Off = seed.IconOffPNG
+		icons.Tun = seed.IconTunPNG
 	}
 
 	// Optional: allow SWELLBOX_CORE to override core path for dev.
