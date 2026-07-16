@@ -10,6 +10,9 @@ require (
 	gopkg.in/yaml.v3 v3.0.1
 )
 
+// Patched tray menu positioning: open above taskbar / tray icon (WinUI-like).
+replace github.com/getlantern/systray => ./third_party/systray
+
 require (
 	git.sr.ht/~jackmordaunt/go-toast v1.1.2 // indirect
 	github.com/esiqveland/notify v0.13.3 // indirect

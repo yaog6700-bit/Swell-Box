@@ -2,11 +2,6 @@
 
 package app
 
-// ConfirmYesNo is not available without a GUI toolkit on non-Windows builds.
-func ConfirmYesNo(title, body string) bool {
-	return false
-}
-
 // RelaunchElevated is Windows-only (UAC runas).
 func RelaunchElevated() error {
 	return errElevateUnsupported

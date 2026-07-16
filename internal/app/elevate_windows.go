@@ -11,35 +11,6 @@ import (
 	"unsafe"
 )
 
-// ConfirmYesNo shows a topmost Yes/No message box. Returns true if the user chose Yes.
-func ConfirmYesNo(title, body string) bool {
-	t, err := syscall.UTF16PtrFromString(title)
-	if err != nil {
-		return false
-	}
-	m, err := syscall.UTF16PtrFromString(body)
-	if err != nil {
-		return false
-	}
-	user32 := syscall.NewLazyDLL("user32.dll")
-	proc := user32.NewProc("MessageBoxW")
-	// MB_YESNO | MB_ICONWARNING | MB_TOPMOST | MB_SETFOREGROUND
-	const (
-		mbYesNo         = 0x00000004
-		mbIconWarning   = 0x00000030
-		mbTopmost       = 0x00040000
-		mbSetForeground = 0x00010000
-		idYes           = 6
-	)
-	r, _, _ := proc.Call(
-		0,
-		uintptr(unsafe.Pointer(m)),
-		uintptr(unsafe.Pointer(t)),
-		mbYesNo|mbIconWarning|mbTopmost|mbSetForeground,
-	)
-	return r == idYes
-}
-
 // RelaunchElevated restarts the current executable with a UAC elevation prompt (runas).
 // On success the caller should exit the current (non-elevated) process.
 func RelaunchElevated() error {
