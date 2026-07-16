@@ -83,23 +83,24 @@ func pickAppAsset(res *AppCheckResult, assets []ghAsset) {
 		}
 	}
 
-	// Prefer thin .exe for Windows; thin .app zip for macOS (smaller than full offline pack).
+	// Releases ship only *-full.zip; prefer that for in-app update.
+	// Keep thin/exe fallbacks for older releases that still list them.
 	switch {
+	case fullZip != "":
+		res.DownloadURL = fullZip
+		res.IsZip = true
+	case thinZip != "":
+		res.DownloadURL = thinZip
+		res.IsZip = true
+	case anyZip != "":
+		res.DownloadURL = anyZip
+		res.IsZip = true
 	case exePlatform != "":
 		res.DownloadURL = exePlatform
 		res.IsZip = false
 	case exeGeneric != "":
 		res.DownloadURL = exeGeneric
 		res.IsZip = false
-	case thinZip != "":
-		res.DownloadURL = thinZip
-		res.IsZip = true
-	case fullZip != "":
-		res.DownloadURL = fullZip
-		res.IsZip = true
-	case anyZip != "":
-		res.DownloadURL = anyZip
-		res.IsZip = true
 	}
 }
 

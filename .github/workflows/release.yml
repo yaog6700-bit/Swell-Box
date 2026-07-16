@@ -132,15 +132,9 @@ jobs:
           if [ "${{ matrix.goos }}" = "darwin" ]; then
             chmod +x scripts/package_macos_app.sh
             ./scripts/package_macos_app.sh "$OUT" "dist/Swell-Box.app" "$VER"
-            # Prefer .app in package; keep raw binary only as build product for debugging
+            # Only ship .app inside the full zip (no separate thin client zip).
             rm -rf dist/package/*
             cp -R "dist/Swell-Box.app" dist/package/
-            # Thin client zip = the .app alone
-            (
-              cd dist
-              ditto -c -k --sequesterRsrc --keepParent "Swell-Box.app" "Swell-Box-darwin-${{ matrix.goarch }}.zip" \
-                || zip -r "Swell-Box-darwin-${{ matrix.goarch }}.zip" "Swell-Box.app"
-            )
           else
             cp "$OUT" dist/package/
           fi
@@ -201,10 +195,8 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: Swell-Box-${{ matrix.goos }}-${{ matrix.goarch }}
-          path: |
-            dist/Swell-Box${{ matrix.ext }}
-            dist/Swell-Box-${{ matrix.goos }}-${{ matrix.goarch }}.zip
-            dist/Swell-Box-${{ matrix.goos }}-${{ matrix.goarch }}-full.zip
+          # Release ships only offline full packages (client + core).
+          path: dist/Swell-Box-${{ matrix.goos }}-${{ matrix.goarch }}-full.zip
           if-no-files-found: error
 
   release:
@@ -218,36 +210,19 @@ jobs:
         with:
           path: release-assets
 
-      - name: Flatten assets
+      - name: Flatten assets (full.zip only)
         shell: bash
         run: |
           mkdir -p out
           find release-assets -type f -print
-          for d in release-assets/*; do
-            [ -d "$d" ] || continue
-            base=$(basename "$d")
-            platform=${base#Swell-Box-}
-            for f in "$d"/*; do
-              [ -f "$f" ] || continue
-              name=$(basename "$f")
-              if [[ "$name" == *-full.zip ]]; then
-                cp "$f" "out/$name"
-              elif [[ "$name" == Swell-Box-*-*.zip ]]; then
-                # thin client zip (e.g. macOS .app zip already platform-tagged)
-                cp "$f" "out/$name"
-              elif [[ "$name" == Swell-Box.exe ]]; then
-                cp "$f" "out/Swell-Box-${platform}.exe"
-              elif [[ "$name" == Swell-Box ]]; then
-                # raw unix binary (linux); macOS prefers the .app zip above
-                if [[ "$platform" != darwin-* ]]; then
-                  cp "$f" "out/Swell-Box-${platform}"
-                fi
-              else
-                cp "$f" "out/$name"
-              fi
-            done
-          done
+          # Only publish *-full.zip — no thin .exe / bare binary / thin .app zip.
+          find release-assets -type f -name '*-full.zip' -exec cp -v {} out/ \;
           ls -la out/
+          n=$(find out -type f -name '*-full.zip' | wc -l | tr -d ' ')
+          if [ "$n" -lt 1 ]; then
+            echo "no full.zip assets found" >&2
+            exit 1
+          fi
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
@@ -259,26 +234,23 @@ jobs:
           body: |
             ## Swell-Box ${{ needs.meta.outputs.tag }}
 
-            ### Recommended: full offline package (core inside zip only)
+            ### Downloads (offline package: client + `sing-box` core)
+
             | Platform | Arch | File |
             |----------|------|------|
             | Windows | amd64 | `Swell-Box-windows-amd64-full.zip` |
             | Windows | arm64 | `Swell-Box-windows-arm64-full.zip` |
-            | macOS | arm64 (Apple Silicon) | `Swell-Box-darwin-arm64-full.zip` (includes `Swell-Box.app`) |
+            | macOS | arm64 (Apple Silicon) | `Swell-Box-darwin-arm64-full.zip` (`Swell-Box.app` inside) |
             | Linux | amd64 | `Swell-Box-linux-amd64-full.zip` |
             | Linux | arm64 | `Swell-Box-linux-arm64-full.zip` |
 
-            Extract and run the client; `sing-box` / `sing-box.exe` is inside the full zip.
-
-            ### Client only
-            - `Swell-Box-windows-amd64.exe` / `Swell-Box-windows-arm64.exe`
-            - `Swell-Box-darwin-arm64.zip` (macOS `.app`)
-            - `Swell-Box-linux-amd64` / `Swell-Box-linux-arm64`
+            Extract and run. Core is **only** inside these zips (no separate thin builds).
 
             ### Notes
             - User data: `~/.swellbox` (Windows: `%USERPROFILE%\.swellbox`)
-            - Official core is NOT a separate release asset; only inside `*-full.zip`
-            - macOS: Apple Silicon only; first open may need right-click Open (Gatekeeper)
-            - macOS is a menu-bar app (`LSUIElement`); no Dock icon; tray shows icon only
+            - **Windows:** run `Swell-Box.exe`
+            - **macOS:** drag `Swell-Box.app` to Applications; if “damaged” → `xattr -cr Swell-Box.app`
+            - **Linux:** `./Swell-Box`
+            - macOS: Apple Silicon only; menu-bar app (no Dock icon)
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

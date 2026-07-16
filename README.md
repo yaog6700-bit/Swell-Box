@@ -72,19 +72,17 @@ git tag v0.2.4
 git push origin v0.2.4
 ```
 
-**Release assets (5 platforms):**
+**Release assets (5 files only — offline full packages):**
 
 | File | Contents |
 |------|----------|
 | `Swell-Box-windows-amd64-full.zip` | Win x64 client + `sing-box.exe` |
 | `Swell-Box-windows-arm64-full.zip` | Win ARM64 client + `sing-box.exe` |
-| `Swell-Box-darwin-arm64-full.zip` | macOS Apple Silicon **`.app`** + `sing-box`（无终端、带图标） |
+| `Swell-Box-darwin-arm64-full.zip` | macOS Apple Silicon **`.app`** + `sing-box` |
 | `Swell-Box-linux-amd64-full.zip` | Linux x64 + `sing-box` |
 | `Swell-Box-linux-arm64-full.zip` | Linux ARM64 + `sing-box` |
 
-`sing-box` is **only inside the full zip**, not uploaded as a separate Release file.
-
-Also published: thin clients `Swell-Box-<os>-<arch>[.exe]` (no core; Start can download if online).
+No thin clients or bare binaries are published — only `*-full.zip`.
 
 ## Usage
 
