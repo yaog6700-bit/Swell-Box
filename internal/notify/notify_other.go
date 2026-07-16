@@ -24,9 +24,8 @@ func initIcon() {
 		if err != nil {
 			return
 		}
-		// Prefer color brand logo (same art as macOS .app AppIcon).
-		// Fall back to monochrome tray glyph if logo missing.
-		for _, name := range []string{"logo.png", "icon.png"} {
+		// Prefer monochrome app mark (same as .app / process icon), then color logo.
+		for _, name := range []string{"icon.png", "logo.png"} {
 			p := filepath.Join(home, ".swellbox", name)
 			if st, err := os.Stat(p); err == nil && !st.IsDir() && st.Size() > 0 {
 				iconPNG = p

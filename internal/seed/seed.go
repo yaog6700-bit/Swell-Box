@@ -9,17 +9,15 @@ var files embed.FS
 
 var (
 	DefaultConfig = mustRead("config.json")
-	// Monochrome tray glyphs (legacy / high-contrast). Prefer Logo* for brand parity
-	// with original SingBoxClient (pickaxe).
+	// Tray: On = running, Off = stopped, Tun = TUN running (pickaxe + X).
 	IconOnICO  = mustRead("icon.ico")
 	IconOffICO = mustRead("icon_off.ico")
 	IconOnPNG  = mustRead("icon.png")
 	IconOffPNG = mustRead("icon_off.png")
-	// IconTun* — compact pickaxe (fallback tray mark).
+	// IconTun* — pickaxe + X for TUN tray (Windows multi-size ICO + PNG).
 	IconTunICO = mustRead("icon_tun.ico")
 	IconTunPNG = mustRead("icon_tun.png")
-	// Logo* — full-color pickaxe brand (same family as original SingBoxClient tray).
-	// Used for: menu-bar while running, macOS .app, desktop notifications.
+	// Logo* — brand mark for notifications / packaging (color logo kept).
 	LogoPNG = mustRead("logo.png")
 	LogoICO = mustRead("logo.ico")
 	GeositeCNSRS = mustRead("rule-set/geosite-cn.srs")

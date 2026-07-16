@@ -28,9 +28,9 @@ import (
 
 // Icons holds tray icon bytes.
 type Icons struct {
-	On  []byte // monochrome — system proxy / normal mode, running
-	Off []byte // monochrome — stopped
-	// Tun is the color brand logo used when TUN mode is on and proxy is running.
+	On  []byte // running (system proxy)
+	Off []byte // stopped
+	// Tun is used when TUN mode is on and proxy is running (pickaxe + X).
 	// If empty, On is used as fallback.
 	Tun []byte
 }
@@ -1311,9 +1311,8 @@ func (c *Controller) stopProxy() error {
 }
 
 func (c *Controller) applyTrayIcon(running bool) {
-	// Windows: SetIcon only (full color). TemplateIcon can look monochrome.
-	// States: stopped → Off (mono); running + system proxy → On (mono);
-	// running + TUN → Tun (color pickaxe / original brand). Only TUN is color.
+	// Same logic on Windows / macOS / Linux:
+	//   stopped → Off; running + system proxy → On; running + TUN → Tun (pickaxe + X).
 	on := c.Icons.On
 	off := c.Icons.Off
 	tun := c.Icons.Tun
@@ -1334,7 +1333,13 @@ func (c *Controller) applyTrayIcon(running bool) {
 	if len(icon) == 0 {
 		return
 	}
-	systray.SetIcon(icon)
+	// macOS menu bar: template icon adapts to light/dark bar (original SingBoxClient style).
+	// Windows/Linux: regular full-color/monochrome SetIcon.
+	if runtime.GOOS == "darwin" {
+		systray.SetTemplateIcon(icon, icon)
+	} else {
+		systray.SetIcon(icon)
+	}
 }
 
 // refreshTrayIcon updates the tray glyph from current core + TUN state.

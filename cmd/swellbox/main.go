@@ -48,17 +48,20 @@ func main() {
 		log.Fatal("app settings: ", err)
 	}
 
-	// Tray icons: monochrome On/Off for normal proxy states (unchanged look).
-	// Only TUN mode uses the color pickaxe brand (original SingBoxClient logo).
+	// Tray icons — same three-state logic on Windows and macOS:
+	//   stopped  → Off (pickaxe + X)
+	//   running  → On  (pickaxe)
+	//   TUN      → Tun (pickaxe + X)
+	// Windows uses .ico; macOS/Linux use .png (template icon on mac menu bar).
 	icons := tray.Icons{}
 	if runtime.GOOS == "windows" {
 		icons.On = seed.IconOnICO
 		icons.Off = seed.IconOffICO
-		icons.Tun = seed.LogoICO
+		icons.Tun = seed.IconTunICO
 	} else {
 		icons.On = seed.IconOnPNG
 		icons.Off = seed.IconOffPNG
-		icons.Tun = seed.LogoPNG
+		icons.Tun = seed.IconTunPNG
 	}
 
 	// Optional: allow SWELLBOX_CORE to override core path for dev.

@@ -20,8 +20,8 @@ type RuleSetFiles struct {
 // Call InstallBundledCore separately (or via update.EnsureCore) to pick up
 // sing-box.exe shipped next to Swell-Box.exe.
 //
-// iconPNG is the monochrome tray glyph; logoPNG is the color brand mark used
-// for desktop notifications (and should match the macOS .app icon).
+// iconPNG is the monochrome app mark (tray On / notifications / process look).
+// logoPNG is optional color brand art kept on disk for packaging reference.
 func BootstrapDataDir(defaultConfig []byte, iconPNG []byte, logoPNG []byte, rules RuleSetFiles) error {
 	home, err := paths.HomeDir()
 	if err != nil {
@@ -37,10 +37,10 @@ func BootstrapDataDir(defaultConfig []byte, iconPNG []byte, logoPNG []byte, rule
 		}
 	}
 
+	// Always refresh monochrome icon so toasts match the current build.
 	if len(iconPNG) > 0 {
 		_ = os.WriteFile(filepath.Join(home, "icon.png"), iconPNG, 0o644)
 	}
-	// Always refresh brand logo so notifications match the shipped build.
 	if len(logoPNG) > 0 {
 		_ = os.WriteFile(filepath.Join(home, "logo.png"), logoPNG, 0o644)
 	}

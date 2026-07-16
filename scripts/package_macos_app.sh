@@ -8,9 +8,10 @@ OUT_APP="${2:?output .app path}"
 VERSION="${3:-0.0.0}"
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-PNG="${ROOT}/internal/seed/logo.png"
+# App icon: same black pickaxe as Windows process icon (not the color brand logo).
+PNG="${ROOT}/internal/seed/icon.png"
 if [[ ! -f "$PNG" ]]; then
-  PNG="${ROOT}/internal/seed/icon.png"
+  PNG="${ROOT}/internal/seed/logo.png"
 fi
 if [[ ! -f "$BIN" ]]; then
   echo "binary not found: $BIN" >&2
