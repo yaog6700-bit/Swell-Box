@@ -228,6 +228,110 @@ func (c *Controller) refreshNodeMenu() {
 	c.fillDeleteSlots(members)
 }
 
+const maxSubSlots = 16
+
+func (c *Controller) initSubDeleteSlots() {
+	// Parent is the top-level 订阅 group (mSubs), not 添加.
+	parent := c.mSubs
+	if parent == nil {
+		parent = c.mAdd
+	}
+	c.mDeleteSubs = parent.AddSubMenuItem(i18n.T("menu_delete_sub"), "")
+	c.subDelSlots = make([]*systray.MenuItem, maxSubSlots)
+	c.subDelURLs = make([]string, maxSubSlots)
+	for i := 0; i < maxSubSlots; i++ {
+		mi := c.mDeleteSubs.AddSubMenuItem("—", "")
+		mi.Hide()
+		c.subDelSlots[i] = mi
+		idx := i
+		go func() {
+			for range mi.ClickedCh {
+				c.onSubDelete(idx)
+			}
+		}()
+	}
+	c.mDeleteSubEmpty = c.mDeleteSubs.AddSubMenuItem(i18n.T("sub_none"), "")
+	c.mDeleteSubEmpty.Disable()
+}
+
+func (c *Controller) onSubDelete(idx int) {
+	if idx < 0 || idx >= len(c.subDelURLs) {
+		return
+	}
+	rawURL := c.subDelURLs[idx]
+	if rawURL == "" {
+		return
+	}
+	// Resolve display name for toast before removal.
+	name := rawURL
+	if items, err := config.LoadSubscriptions(); err == nil {
+		for _, it := range items {
+			if it.URL == rawURL {
+				if it.Name != "" {
+					name = it.Name
+				}
+				break
+			}
+		}
+	}
+	if err := config.RemoveSubscription(rawURL); err != nil {
+		notify.Error(paths.AppName, i18n.T("sub_delete_fail")+err.Error())
+		return
+	}
+	c.refreshSubDeleteMenu()
+	// Only removes the saved URL. Imported nodes stay until deleted under 节点 → 删除节点.
+	notify.Info(paths.AppName, i18n.T("sub_deleted")+name)
+}
+
+func (c *Controller) refreshSubDeleteMenu() {
+	if c.mDeleteSubs == nil {
+		return
+	}
+	items, err := config.LoadSubscriptions()
+	if err != nil {
+		items = nil
+	}
+	if len(items) == 0 {
+		if c.mDeleteSubEmpty != nil {
+			c.mDeleteSubEmpty.SetTitle(i18n.T("sub_none"))
+			c.mDeleteSubEmpty.Show()
+		}
+		for i, mi := range c.subDelSlots {
+			c.subDelURLs[i] = ""
+			if mi != nil {
+				mi.Hide()
+			}
+		}
+		return
+	}
+	if c.mDeleteSubEmpty != nil {
+		c.mDeleteSubEmpty.Hide()
+	}
+	for i := 0; i < maxSubSlots; i++ {
+		mi := c.subDelSlots[i]
+		if mi == nil {
+			continue
+		}
+		if i >= len(items) {
+			c.subDelURLs[i] = ""
+			mi.Hide()
+			continue
+		}
+		it := items[i]
+		c.subDelURLs[i] = it.URL
+		title := it.Name
+		if title == "" {
+			title = it.URL
+		}
+		// Cap very long titles for the menu.
+		if r := []rune(title); len(r) > 40 {
+			title = string(r[:40]) + "…"
+		}
+		mi.SetTitle(title)
+		mi.Show()
+	}
+}
+
 func (c *Controller) fillDeleteSlots(members []string) {
 	if c.mDeleteNodes == nil {
 		return

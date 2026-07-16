@@ -7,6 +7,7 @@ require (
 	github.com/gen2brain/beeep v0.11.2
 	github.com/getlantern/systray v1.2.2
 	golang.org/x/sys v0.30.0
+	gopkg.in/yaml.v3 v3.0.1
 )
 
 require (

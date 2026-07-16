@@ -47,6 +47,7 @@ type Controller struct {
 	mStatus      *systray.MenuItem
 	// Group parents (top-level)
 	mAdd      *systray.MenuItem
+	mSubs     *systray.MenuItem // 订阅：导入 / 更新 / 删除
 	mSettings *systray.MenuItem
 	mTools    *systray.MenuItem
 	mNodes    *systray.MenuItem
@@ -85,6 +86,12 @@ type Controller struct {
 	mDeleteEmpty   *systray.MenuItem
 	selectorTag    string
 
+	// Saved subscription delete slots
+	mDeleteSubs    *systray.MenuItem
+	subDelSlots    []*systray.MenuItem
+	subDelURLs     []string
+	mDeleteSubEmpty *systray.MenuItem
+
 	// Config file watcher
 	cfgWatch       *watch.ConfigWatcher
 	suppressReload time.Time
@@ -115,14 +122,19 @@ func (c *Controller) onReady() {
 
 	systray.AddSeparator()
 
-	// 节点 ▸ 当前代理组（动态）
+	// 节点 ▸ 切换列表 + 删除节点
 	c.initNodeSlots()
 
-	// 添加 ▸ 节点 / 订阅 / 配置文件
+	// 订阅 ▸ 导入 / 更新 / 删除（独立分组）
+	c.mSubs = systray.AddMenuItem(i18n.T("menu_subs"), "")
+	c.mSubscribe = c.mSubs.AddSubMenuItem(i18n.T("import_subscribe"), "")
+	c.mUpdateSubs = c.mSubs.AddSubMenuItem(i18n.T("update_subs"), "")
+	c.initSubDeleteSlots()
+	c.refreshSubDeleteMenu()
+
+	// 添加 ▸ 单节点 / 配置文件
 	c.mAdd = systray.AddMenuItem(i18n.T("menu_add"), "")
 	c.mImport = c.mAdd.AddSubMenuItem(i18n.T("import_clipboard"), "")
-	c.mSubscribe = c.mAdd.AddSubMenuItem(i18n.T("import_subscribe"), "")
-	c.mUpdateSubs = c.mAdd.AddSubMenuItem(i18n.T("update_subs"), "")
 	c.mImportConfig = c.mAdd.AddSubMenuItem(i18n.T("import_config"), "")
 
 	// 配置文件 ▸ 多配置切换
@@ -225,6 +237,9 @@ func (c *Controller) loop() {
 			c.importSubscription()
 		case <-c.mUpdateSubs.ClickedCh:
 			go c.updateSavedSubscriptions()
+		case <-c.mSubs.ClickedCh:
+			// Refresh delete list when user opens 订阅 menu.
+			c.refreshSubDeleteMenu()
 		case <-c.mImportConfig.ClickedCh:
 			c.importConfigFile()
 		case <-c.mAutostart.ClickedCh:
@@ -615,6 +630,7 @@ func (c *Controller) importSubscription() {
 		// Save URL for later one-click update
 		if s, err := config.AddSubscription(text); err == nil {
 			notify.Info(paths.AppName, i18n.T("sub_saved")+s.Name)
+			c.refreshSubDeleteMenu()
 		}
 	}
 	c.applyImportedNodes(nodes)
@@ -807,11 +823,15 @@ func (c *Controller) applyMenuLanguage() {
 	set(c.mRestart, "restart")
 	set(c.mDashboard, "dashboard")
 	set(c.mNodes, "menu_nodes")
-	set(c.mAdd, "menu_add")
-	set(c.mImport, "import_clipboard")
+	set(c.mDeleteNodes, "menu_delete_node")
+	set(c.mSubs, "menu_subs")
 	set(c.mSubscribe, "import_subscribe")
 	set(c.mUpdateSubs, "update_subs")
+	set(c.mDeleteSubs, "menu_delete_sub")
+	set(c.mAdd, "menu_add")
+	set(c.mImport, "import_clipboard")
 	set(c.mImportConfig, "import_config")
+	c.refreshSubDeleteMenu()
 	set(c.mConfigs, "configs")
 	set(c.mSettings, "menu_settings")
 	set(c.mAutostart, "autostart")
