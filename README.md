@@ -91,13 +91,42 @@ Also published: thin clients `Swell-Box-<os>-<arch>[.exe]` (no core; Start can d
 1. Extract the full zip for your platform
 2. Run:
    - **Windows:** `Swell-Box.exe`
-   - **macOS:** open `Swell-Box.app` (menu bar only; first time: right-click → Open)
+   - **macOS:** drag `Swell-Box.app` into **Applications**, then open it (menu bar only).  
+     First time: right-click → Open, or `xattr -cr /Applications/Swell-Box.app` if “damaged”.  
+     The core (`sing-box`) is **inside** the `.app`; first launch copies it to `~/.swellbox/bin`. You do **not** need to keep the unzipped folder after installing.  
+     **Updates:** tray → Update core (in-app). Tray → Check app update downloads a new `.app` and replaces the running bundle (then relaunches).
    - **Linux:** `./Swell-Box`
 3. **Add** → import node / subscription / config
-4. **Start**
+4. **Start** (menu bar icon)
 5. **Dashboard** for connections / selectors
 
 Custom configs: put `config*.json` under `~/.swellbox/` or use **Import Config File**. Routing in imported files is left as-is.
+
+### macOS: “opened but no internet”
+
+Usually **system proxy is still pointing at `127.0.0.1:7890`** while the core is not running (or a node is dead). Fix:
+
+```bash
+# 1) Turn off leftover system proxy (all services)
+networksetup -listallnetworkservices
+# then for your active interface, e.g. Wi-Fi:
+networksetup -setwebproxystate "Wi-Fi" off
+networksetup -setsecurewebproxystate "Wi-Fi" off
+networksetup -setsocksfirewallproxystate "Wi-Fi" off
+
+# 2) Check whether mixed proxy is listening
+lsof -iTCP:7890 -sTCP:LISTEN
+
+# 3) Core log
+tail -n 80 ~/.swellbox/logs/core.log
+```
+
+In the tray menu:
+
+1. Confirm you **imported a subscription / node** and selected a working node (not only `direct`).
+2. Turn **System Proxy** on → **Start**.
+3. **TUN on macOS:** tray menu → enable TUN → confirm → **Start** → enter Mac password when prompted (authorizes sing-box only). Or keep using **System Proxy** without TUN.
+4. Open **Dashboard** (`http://127.0.0.1:9091/dashboard/`) — if it fails, the core is not up.
 
 ## License
 

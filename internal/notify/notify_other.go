@@ -24,9 +24,14 @@ func initIcon() {
 		if err != nil {
 			return
 		}
-		p := filepath.Join(home, ".swellbox", "icon.png")
-		if st, err := os.Stat(p); err == nil && !st.IsDir() {
-			iconPNG = p
+		// Prefer color brand logo (same art as macOS .app AppIcon).
+		// Fall back to monochrome tray glyph if logo missing.
+		for _, name := range []string{"logo.png", "icon.png"} {
+			p := filepath.Join(home, ".swellbox", name)
+			if st, err := os.Stat(p); err == nil && !st.IsDir() && st.Size() > 0 {
+				iconPNG = p
+				return
+			}
 		}
 	})
 }

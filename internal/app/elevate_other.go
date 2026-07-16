@@ -1,8 +1,8 @@
-//go:build !windows
+//go:build !windows && !darwin
 
 package app
 
-// RelaunchElevated is Windows-only (UAC runas).
+// RelaunchElevated is not supported on this platform.
 func RelaunchElevated() error {
 	return errElevateUnsupported
 }

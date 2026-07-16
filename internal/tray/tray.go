@@ -5,6 +5,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -426,7 +427,7 @@ func (c *Controller) toggleTunMode() {
 	}
 	want := !c.App.TunMode
 
-	// Enabling TUN without admin: prompt for UAC relaunch instead of failing later.
+	// Enabling TUN without admin/root privileges.
 	if want && !app.IsElevated() {
 		if !app.ConfirmYesNo(i18n.T("tun_elevate_title"), i18n.T("tun_elevate_body")) {
 			// Keep menu unchecked; nothing saved.
@@ -436,21 +437,25 @@ func (c *Controller) toggleTunMode() {
 			notify.Info(paths.AppName, i18n.T("tun_elevate_cancel"))
 			return
 		}
-		// Persist TUN on, drop system proxy, then elevate-restart.
-		c.App.TunMode = true
-		if c.App.SystemProxy {
-			c.App.SystemProxy = false
-			if c.mSysProxy != nil {
-				c.mSysProxy.Uncheck()
+		// Windows: relaunch whole app elevated (UAC). macOS: keep tray as user;
+		// sing-box is started with an authorization dialog when proxy starts.
+		if runtime.GOOS == "windows" {
+			c.App.TunMode = true
+			if c.App.SystemProxy {
+				c.App.SystemProxy = false
+				if c.mSysProxy != nil {
+					c.mSysProxy.Uncheck()
+				}
+				_ = sysproxy.Restore()
 			}
-			_ = sysproxy.Restore()
+			if c.mTunMode != nil {
+				c.mTunMode.Check()
+			}
+			_ = config.SaveAppSettings(c.App)
+			c.elevateAndExit()
+			return
 		}
-		if c.mTunMode != nil {
-			c.mTunMode.Check()
-		}
-		_ = config.SaveAppSettings(c.App)
-		c.elevateAndExit()
-		return
+		// darwin/linux: fall through and enable TUN in-process.
 	}
 
 	c.App.TunMode = want
@@ -468,6 +473,9 @@ func (c *Controller) toggleTunMode() {
 		}
 		_ = config.SaveAppSettings(c.App)
 		notify.Info(paths.AppName, i18n.T("tun_on"))
+		if runtime.GOOS == "darwin" && !app.IsElevated() {
+			notify.Info(paths.AppName, i18n.T("tun_mac_hint"))
+		}
 	} else {
 		if c.mTunMode != nil {
 			c.mTunMode.Uncheck()
@@ -1232,8 +1240,9 @@ func (c *Controller) startProxy() error {
 		return fmt.Errorf("%s%w", i18n.T("core_download_fail"), err)
 	}
 
-	// TUN without admin: ask to elevate instead of letting sing-box die with Access denied.
-	if c.App != nil && c.App.TunMode && !app.IsElevated() {
+	// Windows TUN without admin: ask to elevate the whole app (UAC).
+	// macOS TUN: core starts with an authorization dialog (NeedPrivileges).
+	if c.App != nil && c.App.TunMode && !app.IsElevated() && runtime.GOOS == "windows" {
 		if app.ConfirmYesNo(i18n.T("tun_elevate_title"), i18n.T("tun_elevate_body")) {
 			c.elevateAndExit()
 			return fmt.Errorf("%s", i18n.T("tun_need_admin"))
@@ -1271,6 +1280,8 @@ func (c *Controller) startProxy() error {
 	}
 	c.Core.ConfigPath = runtimePath
 	c.Core.WorkDir = home
+	// macOS: elevate only the core process for TUN (password prompt once at start).
+	c.Core.NeedPrivileges = tunMode && !app.IsElevated() && runtime.GOOS == "darwin"
 
 	if err := c.Core.Start(); err != nil {
 		return err
@@ -1300,7 +1311,8 @@ func (c *Controller) stopProxy() error {
 }
 
 func (c *Controller) applyTrayIcon(running bool) {
-	// Windows: only SetIcon (full color). Avoid TemplateIcon (can look monochrome).
+	// Full-color pickaxe brand while running (same family as original SingBoxClient).
+	// Avoid TemplateIcon — it forces monochrome and hides the red pickaxe mark.
 	on := c.Icons.On
 	off := c.Icons.Off
 	tun := c.Icons.Tun
@@ -1312,7 +1324,7 @@ func (c *Controller) applyTrayIcon(running bool) {
 	}
 	icon := off
 	if running {
-		// TUN mode → color logo; other proxy modes keep monochrome On.
+		// TUN uses brand logo too (same pickaxe); fall back to On if unset.
 		if c.App != nil && c.App.TunMode && len(tun) > 0 {
 			icon = tun
 		} else {

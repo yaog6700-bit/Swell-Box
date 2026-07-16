@@ -20,14 +20,17 @@ var (
 func initIcon() {
 	once.Do(func() {
 		// Prefer a small on-disk icon so Windows toast has an image.
-		// Seed copies live under %USERPROFILE%\.swellbox if we write one; else empty.
+		// Use the same color brand logo as macOS for a consistent look.
 		home, err := os.UserHomeDir()
 		if err != nil {
 			return
 		}
-		p := filepath.Join(home, ".swellbox", "icon.png")
-		if st, err := os.Stat(p); err == nil && !st.IsDir() {
-			iconPNG = p
+		for _, name := range []string{"logo.png", "icon.png"} {
+			p := filepath.Join(home, ".swellbox", name)
+			if st, err := os.Stat(p); err == nil && !st.IsDir() && st.Size() > 0 {
+				iconPNG = p
+				return
+			}
 		}
 	})
 }

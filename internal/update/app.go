@@ -43,6 +43,7 @@ func pickAppAsset(res *AppCheckResult, assets []ghAsset) {
 		exePlatform string // Swell-Box-windows-amd64.exe
 		exeGeneric  string // Swell-Box.exe
 		fullZip     string // *-full.zip with platform
+		thinZip     string // platform zip without "full" (macOS .app zip)
 		anyZip      string
 	)
 
@@ -57,7 +58,7 @@ func pickAppAsset(res *AppCheckResult, assets []ghAsset) {
 				exePlatform = url
 			}
 		case goos == "windows" && strings.HasSuffix(n, ".exe") && strings.Contains(n, "swell") && !strings.Contains(n, "sing-box"):
-			// untagged or other arch naming 鈥?keep as weak fallback
+			// untagged or other arch naming — keep as weak fallback
 			if exeGeneric == "" && !strings.Contains(n, "arm64") && goarch == "amd64" {
 				exeGeneric = url
 			}
@@ -71,6 +72,10 @@ func pickAppAsset(res *AppCheckResult, assets []ghAsset) {
 			if fullZip == "" {
 				fullZip = url
 			}
+		case hasPlat && strings.HasSuffix(n, ".zip") && !strings.Contains(n, "full"):
+			if thinZip == "" {
+				thinZip = url
+			}
 		case hasPlat && (strings.HasSuffix(n, ".zip") || strings.HasSuffix(n, ".tar.gz")):
 			if anyZip == "" {
 				anyZip = url
@@ -78,7 +83,7 @@ func pickAppAsset(res *AppCheckResult, assets []ghAsset) {
 		}
 	}
 
-	// Prefer thin .exe for in-app replace (smaller, no unzip).
+	// Prefer thin .exe for Windows; thin .app zip for macOS (smaller than full offline pack).
 	switch {
 	case exePlatform != "":
 		res.DownloadURL = exePlatform
@@ -86,6 +91,9 @@ func pickAppAsset(res *AppCheckResult, assets []ghAsset) {
 	case exeGeneric != "":
 		res.DownloadURL = exeGeneric
 		res.IsZip = false
+	case thinZip != "":
+		res.DownloadURL = thinZip
+		res.IsZip = true
 	case fullZip != "":
 		res.DownloadURL = fullZip
 		res.IsZip = true

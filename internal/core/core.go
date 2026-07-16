@@ -26,6 +26,14 @@ type Manager struct {
 	WorkDir string
 	// ConfigPath is the runtime config file passed as -c.
 	ConfigPath string
+	// NeedPrivileges requests elevated start (macOS TUN: admin password dialog).
+	// When true and the process is not already root/admin, Start may use a
+	// platform-specific privileged launcher (see privileged_*.go).
+	NeedPrivileges bool
+
+	// privileged marks a core started via admin helper (not a normal child).
+	privileged    bool
+	privilegedPID int
 }
 
 func (m *Manager) Running() bool {
@@ -135,6 +143,12 @@ func (m *Manager) Start() error {
 	logPath := filepath.Join(logDir, "core.log")
 	// Prevent unbounded growth: rotate when over maxLogBytes.
 	rotateLogIfNeeded(logPath, maxLogBytes, keepLogBytes)
+
+	// macOS TUN: start sing-box as root via authorization dialog (tray stays user).
+	if m.NeedPrivileges && runtime.GOOS == "darwin" && os.Geteuid() != 0 {
+		return m.startPrivileged(bin, m.ConfigPath, workDir, logPath)
+	}
+
 	logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
 	if err != nil {
 		m.mu.Unlock()
@@ -159,6 +173,8 @@ func (m *Manager) Start() error {
 
 	m.cmd = cmd
 	m.logFile = logFile
+	m.privileged = false
+	m.privilegedPID = 0
 	m.running = true
 	m.mu.Unlock()
 
@@ -191,6 +207,10 @@ func (m *Manager) Start() error {
 
 func (m *Manager) Stop() error {
 	m.mu.Lock()
+	if m.privileged || m.privilegedPID > 0 {
+		m.mu.Unlock()
+		return m.stopPrivileged()
+	}
 	cmd := m.cmd
 	if !m.running || cmd == nil || cmd.Process == nil {
 		m.running = false

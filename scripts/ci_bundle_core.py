@@ -113,6 +113,9 @@ def main() -> None:
 
     # macOS .app layout: put core next to the executable inside Contents/MacOS
     # so InstallBundledCore / ResolveBinary find it without PATH setup.
+    # Do NOT leave a loose sing-box next to the .app — users should drag only
+    # Swell-Box.app into /Applications like any normal Mac app. On first run the
+    # core is copied to ~/.swellbox/bin and no longer depends on the zip folder.
     macos_bin = pkg / "Swell-Box.app" / "Contents" / "MacOS"
     if macos_bin.is_dir():
         dest = macos_bin / core_bin
@@ -121,14 +124,10 @@ def main() -> None:
             dest.chmod(0o755)
         except OSError:
             pass
-        # also place next to .app for manual/CLI users
-        side = pkg / core_bin
-        shutil.copy2(found, side)
-        try:
-            side.chmod(0o755)
-        except OSError:
-            pass
-        run_hint = "2. Open Swell-Box.app (menu bar only; no Terminal)"
+        run_hint = (
+            "2. Drag Swell-Box.app to Applications (or open from here)\n"
+            "   Core is inside the .app; first launch installs it to ~/.swellbox/bin"
+        )
     else:
         dest = pkg / core_bin
         shutil.copy2(found, dest)
@@ -148,7 +147,13 @@ def main() -> None:
                 run_hint,
                 f"3. {core_bin} is bundled for offline use (no download needed)",
                 "",
-                "macOS tip: first open → right-click Swell-Box.app → Open (Gatekeeper).",
+                "macOS install (recommended):",
+                "  • Drag Swell-Box.app → Applications (same as Chrome / WeChat)",
+                "  • Open from Launchpad / Applications — not required to keep the zip folder",
+                "  • If “damaged”: xattr -cr /Applications/Swell-Box.app",
+                "  • First open: right-click → Open (Gatekeeper)",
+                "macOS no internet: turn System Proxy off, or networksetup -setwebproxystate Wi-Fi off",
+                "  (also secureweb + socksfirewall). Then Start after importing nodes. Log: ~/.swellbox/logs/core.log",
                 "Data: ~/.swellbox  (Windows: %USERPROFILE%\\.swellbox)",
                 "",
             ]

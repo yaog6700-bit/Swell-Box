@@ -36,7 +36,7 @@ func main() {
 	defer app.ReleaseSingleInstance()
 	defer core.CloseJob()
 
-	if err := app.BootstrapDataDir(seed.DefaultConfig, seed.IconOnPNG, app.RuleSetFiles{
+	if err := app.BootstrapDataDir(seed.DefaultConfig, seed.IconOnPNG, seed.LogoPNG, app.RuleSetFiles{
 		GeositeCN: seed.GeositeCNSRS,
 		GeoipCN:   seed.GeoipCNSRS,
 	}); err != nil {
@@ -48,15 +48,17 @@ func main() {
 		log.Fatal("app settings: ", err)
 	}
 
+	// Menu-bar / tray: match original SingBoxClient pickaxe brand when running.
+	// Off state keeps a monochrome glyph so "stopped" is still obvious.
 	icons := tray.Icons{}
 	if runtime.GOOS == "windows" {
-		icons.On = seed.IconOnICO
+		icons.On = seed.LogoICO
 		icons.Off = seed.IconOffICO
-		icons.Tun = seed.IconTunICO
+		icons.Tun = seed.LogoICO
 	} else {
-		icons.On = seed.IconOnPNG
+		icons.On = seed.LogoPNG
 		icons.Off = seed.IconOffPNG
-		icons.Tun = seed.IconTunPNG
+		icons.Tun = seed.LogoPNG
 	}
 
 	// Optional: allow SWELLBOX_CORE to override core path for dev.
