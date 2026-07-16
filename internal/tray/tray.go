@@ -147,7 +147,7 @@ func (c *Controller) onReady() {
 	c.initConfigSlots()
 	c.refreshConfigMenu()
 
-	// 设置 ▸ 自启 / 代理 / 语言 / 工具（工具在设置内）
+	// 设置 ▸ 自启 / 代理 / 语言 / 工具 / 检查更新 / 关于
 	c.mSettings = systray.AddMenuItem(i18n.T("menu_settings"), "")
 	c.mAutostart = c.mSettings.AddSubMenuItemCheckbox(i18n.T("autostart"), "", autostart.Enabled())
 	c.mAutoProxy = c.mSettings.AddSubMenuItemCheckbox(i18n.T("auto_proxy"), "", c.App != nil && c.App.AutoStartProxy)
@@ -163,17 +163,19 @@ func (c *Controller) onReady() {
 	c.mLangZH = c.mLang.AddSubMenuItemCheckbox(i18n.T("lang_zh"), "", i18n.Get() == i18n.ZH)
 	c.mLangEN = c.mLang.AddSubMenuItemCheckbox(i18n.T("lang_en"), "", i18n.Get() == i18n.EN)
 
-	// 工具（放在设置下面）▸ 数据目录 / 日志 / 检查更新
+	// 工具 ▸ 数据目录 / 日志
 	c.mTools = c.mSettings.AddSubMenuItem(i18n.T("menu_tools"), "")
 	c.mOpenDir = c.mTools.AddSubMenuItem(i18n.T("open_data"), "")
 	c.mOpenLog = c.mTools.AddSubMenuItem(i18n.T("open_log"), "")
-	c.mUpdate = c.mTools.AddSubMenuItem(i18n.T("update"), "")
+
+	// 检查更新（设置下与工具同级）
+	c.mUpdate = c.mSettings.AddSubMenuItem(i18n.T("update"), "")
 	c.mUpdateCore = c.mUpdate.AddSubMenuItem(i18n.T("update_core_stable"), "")
 	c.mUpdateCorePre = c.mUpdate.AddSubMenuItem(i18n.T("update_core_pre"), "")
 	c.mUpdateGeo = c.mUpdate.AddSubMenuItem(i18n.T("update_geo"), "")
 	c.mUpdateApp = c.mUpdate.AddSubMenuItem(i18n.T("update_app"), "")
 
-	// 关于（放在设置下面）
+	// 关于
 	c.mAbout = c.mSettings.AddSubMenuItem(i18n.TName("about"), "")
 
 	systray.AddSeparator()
