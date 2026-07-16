@@ -1311,8 +1311,9 @@ func (c *Controller) stopProxy() error {
 }
 
 func (c *Controller) applyTrayIcon(running bool) {
-	// Full-color pickaxe brand while running (same family as original SingBoxClient).
-	// Avoid TemplateIcon — it forces monochrome and hides the red pickaxe mark.
+	// Windows: SetIcon only (full color). TemplateIcon can look monochrome.
+	// States: stopped → Off (mono); running + system proxy → On (mono);
+	// running + TUN → Tun (color pickaxe / original brand). Only TUN is color.
 	on := c.Icons.On
 	off := c.Icons.Off
 	tun := c.Icons.Tun
@@ -1324,7 +1325,6 @@ func (c *Controller) applyTrayIcon(running bool) {
 	}
 	icon := off
 	if running {
-		// TUN uses brand logo too (same pickaxe); fall back to On if unset.
 		if c.App != nil && c.App.TunMode && len(tun) > 0 {
 			icon = tun
 		} else {

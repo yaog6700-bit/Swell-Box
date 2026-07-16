@@ -48,15 +48,15 @@ func main() {
 		log.Fatal("app settings: ", err)
 	}
 
-	// Menu-bar / tray: match original SingBoxClient pickaxe brand when running.
-	// Off state keeps a monochrome glyph so "stopped" is still obvious.
+	// Tray icons: monochrome On/Off for normal proxy states (unchanged look).
+	// Only TUN mode uses the color pickaxe brand (original SingBoxClient logo).
 	icons := tray.Icons{}
 	if runtime.GOOS == "windows" {
-		icons.On = seed.LogoICO
+		icons.On = seed.IconOnICO
 		icons.Off = seed.IconOffICO
 		icons.Tun = seed.LogoICO
 	} else {
-		icons.On = seed.LogoPNG
+		icons.On = seed.IconOnPNG
 		icons.Off = seed.IconOffPNG
 		icons.Tun = seed.LogoPNG
 	}
