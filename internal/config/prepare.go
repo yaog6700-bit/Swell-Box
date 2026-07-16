@@ -37,8 +37,13 @@ func PrepareRuntimeConfig(userConfigPath, runtimePath string, dashboardPort int,
 	ensureCacheFile(root)
 	// Prefer local rule-set files under workdir (offline-first).
 	preferLocalRuleSets(root)
-	// sing-box 鈮?.12 rejects detour:"direct" on DNS servers.
+	// sing-box ≥1.12 rejects detour:"direct" on DNS servers.
 	stripDirectDNSDetour(root)
+	// Empty selector/urltest (common in full templates before subscription fills
+	// them) → fill only in this runtime copy. User file on disk is never changed.
+	if _, err := sanitizeOutboundGroups(root); err != nil {
+		return err
+	}
 	applyTunMode(root, tunMode)
 
 	out, err := json.MarshalIndent(root, "", "  ")
@@ -51,9 +56,13 @@ func PrepareRuntimeConfig(userConfigPath, runtimePath string, dashboardPort int,
 	return os.WriteFile(runtimePath, out, 0o644)
 }
 
-// applyTunMode injects or removes the managed TUN inbound on the runtime config.
+// applyTunMode injects or removes TUN inbounds on the runtime config only.
+//
+// When disabled: strip ALL tun inbounds (including those from imported full
+// configs). Otherwise a user JSON with "type":"tun" always requires admin and
+// the core never starts → Dashboard cannot open.
+// When enabled: keep user tun if present, else inject SwellTunTag.
 func applyTunMode(root map[string]any, enabled bool) {
-	// Always drop our previous injection first (idempotent rebuild).
 	inbounds, _ := root["inbounds"].([]any)
 	var kept []any
 	for _, item := range inbounds {
@@ -62,8 +71,16 @@ func applyTunMode(root map[string]any, enabled bool) {
 			kept = append(kept, item)
 			continue
 		}
+		// Drop our managed injection always; rebuild below if needed.
 		if tag, _ := m["tag"].(string); tag == SwellTunTag {
 			continue
+		}
+		// When tray TUN is off, also drop any imported tun inbound so mixed
+		// proxy can start without elevation.
+		if !enabled {
+			if t, _ := m["type"].(string); t == "tun" {
+				continue
+			}
 		}
 		kept = append(kept, item)
 	}

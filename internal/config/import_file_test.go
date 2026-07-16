@@ -2,7 +2,7 @@ package config
 
 import "testing"
 
-func TestSanitizeEmptyURLTest(t *testing.T) {
+func TestSanitizeEmptyURLTestRuntimeOnly(t *testing.T) {
 	root := map[string]any{
 		"outbounds": []any{
 			map[string]any{"type": "direct", "tag": "Direct"},
@@ -33,6 +33,28 @@ func TestSanitizeEmptyURLTest(t *testing.T) {
 	list := toStringSlice(hk["outbounds"])
 	if len(list) != 1 || list[0] != "Direct" {
 		t.Fatalf("filled=%v want Direct", list)
+	}
+}
+
+func TestInspectEmptyDoesNotMutate(t *testing.T) {
+	root := map[string]any{
+		"outbounds": []any{
+			map[string]any{"type": "direct", "tag": "Direct"},
+			map[string]any{
+				"type":      "urltest",
+				"tag":       "HongKong",
+				"outbounds": []any{},
+			},
+		},
+	}
+	empty, hasFB := inspectEmptyGroups(root)
+	if !hasFB || len(empty) != 1 {
+		t.Fatalf("empty=%v hasFB=%v", empty, hasFB)
+	}
+	// still empty on disk representation
+	list := toStringSlice(root["outbounds"].([]any)[1].(map[string]any)["outbounds"])
+	if len(list) != 0 {
+		t.Fatalf("mutated: %v", list)
 	}
 }
 

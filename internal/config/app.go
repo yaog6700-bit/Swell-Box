@@ -2,6 +2,7 @@ package config
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -31,9 +32,19 @@ type AppSettings struct {
 	Language string `json:"language"`
 }
 
+// DefaultConfigFile is the Swell-Box home profile used by the tray「节点」menu
+// (import node / subscription). Other imported templates are switched via
+// 配置文件 + Dashboard only.
+const DefaultConfigFile = "config.json"
+
+// IsDefaultConfigName reports whether name is the home profile config.json.
+func IsDefaultConfigName(name string) bool {
+	return strings.EqualFold(strings.TrimSpace(name), DefaultConfigFile)
+}
+
 func DefaultAppSettings() *AppSettings {
 	return &AppSettings{
-		ActiveConfig:  "config.json",
+		ActiveConfig:  DefaultConfigFile,
 		DashboardPort: paths.DefaultPort,
 		// pre: official dashboard (api service) needs 1.14+ for now
 		CoreChannel: "pre",
@@ -62,7 +73,7 @@ func LoadAppSettings() (*AppSettings, error) {
 		return nil, err
 	}
 	if s.ActiveConfig == "" {
-		s.ActiveConfig = "config.json"
+		s.ActiveConfig = DefaultConfigFile
 	}
 	if s.DashboardPort <= 0 {
 		s.DashboardPort = paths.DefaultPort
@@ -115,6 +126,46 @@ func ListConfigFiles() ([]string, error) {
 		}
 	}
 	return names, nil
+}
+
+// DeleteConfigFile removes a config*.json from the data dir.
+// If it was the active config, switches ActiveConfig to another remaining file
+// (prefer config.json) or "config.json" as placeholder name.
+func DeleteConfigFile(settings *AppSettings, name string) error {
+	name = strings.TrimSpace(name)
+	if name == "" || name == "app.json" {
+		return fmt.Errorf("invalid config name")
+	}
+	if !strings.HasPrefix(name, "config") || !strings.HasSuffix(name, ".json") {
+		return fmt.Errorf("not a managed config file: %s", name)
+	}
+	// Safety: never delete outside basename
+	if filepath.Base(name) != name {
+		return fmt.Errorf("invalid config name")
+	}
+	dir, err := paths.ConfigDir()
+	if err != nil {
+		return err
+	}
+	path := filepath.Join(dir, name)
+	if err := os.Remove(path); err != nil {
+		return err
+	}
+	if settings != nil && settings.ActiveConfig == name {
+		next := DefaultConfigFile
+		if names, err := ListConfigFiles(); err == nil && len(names) > 0 {
+			next = names[0]
+			for _, n := range names {
+				if IsDefaultConfigName(n) {
+					next = n
+					break
+				}
+			}
+		}
+		settings.ActiveConfig = next
+		_ = SaveAppSettings(settings)
+	}
+	return nil
 }
 
 func ActiveConfigPath(s *AppSettings) (string, error) {

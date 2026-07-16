@@ -46,16 +46,15 @@ type Controller struct {
 	mDashboard   *systray.MenuItem
 	mStatus      *systray.MenuItem
 	// Group parents (top-level)
-	mAdd      *systray.MenuItem
 	mSubs     *systray.MenuItem // 订阅：导入 / 更新 / 删除
 	mSettings *systray.MenuItem
 	mTools    *systray.MenuItem
 	mNodes    *systray.MenuItem
 
-	mImport        *systray.MenuItem
-	mSubscribe     *systray.MenuItem
+	mImport        *systray.MenuItem // under 节点
+	mSubscribe     *systray.MenuItem // under 订阅
 	mUpdateSubs    *systray.MenuItem
-	mImportConfig  *systray.MenuItem
+	mImportConfig  *systray.MenuItem // under 配置文件
 	mAutostart     *systray.MenuItem
 	mAutoProxy     *systray.MenuItem
 	mSysProxy      *systray.MenuItem
@@ -75,19 +74,24 @@ type Controller struct {
 	mQuit          *systray.MenuItem
 
 	// Dynamic config file slots under 配置文件
-	configSlots    []*systray.MenuItem
-	configNames    []string
-	mConfigsEmpty  *systray.MenuItem
+	configSlots     []*systray.MenuItem
+	configNames     []string
+	mConfigsEmpty   *systray.MenuItem
+	mDeleteConfigs  *systray.MenuItem
+	configDelSlots  []*systray.MenuItem
+	configDelNames  []string
+	mDeleteCfgEmpty *systray.MenuItem
 
 	// Dynamic node slots (switch + delete)
 	nodeSlots      []*systray.MenuItem
 	nodeTags       []string
+	nodeGroups     []string // clash group for each nodeTags[i] (region urltest or primary)
 	mNodesEmpty    *systray.MenuItem
 	mDeleteNodes   *systray.MenuItem
 	deleteSlots    []*systray.MenuItem
 	deleteTags     []string
 	mDeleteEmpty   *systray.MenuItem
-	selectorTag    string
+	selectorTag    string // top-level selector (proxy / Manual)
 
 	// Saved subscription delete slots
 	mDeleteSubs    *systray.MenuItem
@@ -125,27 +129,22 @@ func (c *Controller) onReady() {
 
 	systray.AddSeparator()
 
-	// 节点 ▸ 切换列表 + 删除节点
+	// 节点 ▸ 切换 / 导入节点 / 删除节点
 	c.initNodeSlots()
 
-	// 订阅 ▸ 导入 / 更新 / 删除（独立分组）
+	// 订阅 ▸ 导入 / 更新 / 删除
 	c.mSubs = systray.AddMenuItem(i18n.T("menu_subs"), "")
 	c.mSubscribe = c.mSubs.AddSubMenuItem(i18n.T("import_subscribe"), "")
 	c.mUpdateSubs = c.mSubs.AddSubMenuItem(i18n.T("update_subs"), "")
 	c.initSubDeleteSlots()
 	c.refreshSubDeleteMenu()
 
-	// 添加 ▸ 单节点 / 配置文件
-	c.mAdd = systray.AddMenuItem(i18n.T("menu_add"), "")
-	c.mImport = c.mAdd.AddSubMenuItem(i18n.T("import_clipboard"), "")
-	c.mImportConfig = c.mAdd.AddSubMenuItem(i18n.T("import_config"), "")
-
-	// 配置文件 ▸ 多配置切换（预分配槽位，导入后可实时刷新）
+	// 配置文件 ▸ 列表 / 导入配置 / 删除配置
 	c.mConfigs = systray.AddMenuItem(i18n.T("configs"), "")
 	c.initConfigSlots()
 	c.refreshConfigMenu()
 
-	// 设置 ▸ 自启 / 代理 / 语言
+	// 设置 ▸ 自启 / 代理 / 语言 / 工具（工具在设置内）
 	c.mSettings = systray.AddMenuItem(i18n.T("menu_settings"), "")
 	c.mAutostart = c.mSettings.AddSubMenuItemCheckbox(i18n.T("autostart"), "", autostart.Enabled())
 	c.mAutoProxy = c.mSettings.AddSubMenuItemCheckbox(i18n.T("auto_proxy"), "", c.App != nil && c.App.AutoStartProxy)
@@ -161,20 +160,20 @@ func (c *Controller) onReady() {
 	c.mLangZH = c.mLang.AddSubMenuItemCheckbox(i18n.T("lang_zh"), "", i18n.Get() == i18n.ZH)
 	c.mLangEN = c.mLang.AddSubMenuItemCheckbox(i18n.T("lang_en"), "", i18n.Get() == i18n.EN)
 
-	// 检查更新 ▸
-	c.mUpdate = systray.AddMenuItem(i18n.T("update"), "")
+	// 工具（放在设置下面）▸ 数据目录 / 日志 / 检查更新
+	c.mTools = c.mSettings.AddSubMenuItem(i18n.T("menu_tools"), "")
+	c.mOpenDir = c.mTools.AddSubMenuItem(i18n.T("open_data"), "")
+	c.mOpenLog = c.mTools.AddSubMenuItem(i18n.T("open_log"), "")
+	c.mUpdate = c.mTools.AddSubMenuItem(i18n.T("update"), "")
 	c.mUpdateCore = c.mUpdate.AddSubMenuItem(i18n.T("update_core_stable"), "")
 	c.mUpdateCorePre = c.mUpdate.AddSubMenuItem(i18n.T("update_core_pre"), "")
 	c.mUpdateGeo = c.mUpdate.AddSubMenuItem(i18n.T("update_geo"), "")
 	c.mUpdateApp = c.mUpdate.AddSubMenuItem(i18n.T("update_app"), "")
 
-	// 工具 ▸ 数据目录 / 日志
-	c.mTools = systray.AddMenuItem(i18n.T("menu_tools"), "")
-	c.mOpenDir = c.mTools.AddSubMenuItem(i18n.T("open_data"), "")
-	c.mOpenLog = c.mTools.AddSubMenuItem(i18n.T("open_log"), "")
+	// 关于（放在设置下面）
+	c.mAbout = c.mSettings.AddSubMenuItem(i18n.TName("about"), "")
 
 	systray.AddSeparator()
-	c.mAbout = systray.AddMenuItem(i18n.TName("about"), "")
 	c.mQuit = systray.AddMenuItem(i18n.T("quit"), "")
 
 	go c.loop()
@@ -231,10 +230,7 @@ func (c *Controller) loop() {
 				notify.Info(paths.AppName, i18n.T("restarted"))
 			}
 		case <-c.mDashboard.ClickedCh:
-			url := paths.DashboardURL(c.App.DashboardPort)
-			if err := app.OpenURL(url); err != nil {
-				go popup(paths.AppName, i18n.T("open_browser_fail")+url)
-			}
+			c.openDashboard()
 		case <-c.mImport.ClickedCh:
 			c.importFromClipboard()
 		case <-c.mSubscribe.ClickedCh:
@@ -292,7 +288,6 @@ func (c *Controller) loop() {
 			c.refreshConfigMenu()
 		case <-c.mUpdate.ClickedCh:
 		case <-c.mLang.ClickedCh:
-		case <-c.mAdd.ClickedCh:
 		case <-c.mSettings.ClickedCh:
 		case <-c.mTools.ClickedCh:
 		case <-c.mNodes.ClickedCh:
@@ -584,6 +579,29 @@ func (c *Controller) shutdown() {
 	_ = sysproxy.Restore()
 }
 
+// openDashboard opens the official sing-box dashboard in the browser.
+// The API only listens while the core is running — start it first if needed.
+func (c *Controller) openDashboard() {
+	port := paths.DefaultPort
+	if c.App != nil && c.App.DashboardPort > 0 {
+		port = c.App.DashboardPort
+	}
+	url := paths.DashboardURL(port)
+
+	if c.Core == nil || !c.Core.Running() {
+		notify.Info(paths.AppName, i18n.T("dashboard_starting"))
+		if err := c.startProxy(); err != nil {
+			notify.Error(paths.AppName, i18n.T("dashboard_need_start")+err.Error())
+			return
+		}
+		// Give API a moment to bind before the browser loads.
+		time.Sleep(400 * time.Millisecond)
+	}
+	if err := app.OpenURL(url); err != nil {
+		go popup(paths.AppName, i18n.T("open_browser_fail")+url)
+	}
+}
+
 func (c *Controller) importConfigFile() {
 	path, err := app.PickJSONFile(i18n.T("import_config_title"))
 	if err != nil {
@@ -621,6 +639,11 @@ func (c *Controller) importConfigFile() {
 }
 
 func (c *Controller) importSubscription() {
+	// 节点 / 订阅 always target the home profile config.json.
+	if err := c.useHomeProfileForNodes(); err != nil {
+		notify.Error(paths.AppName, i18n.T("save_failed")+err.Error())
+		return
+	}
 	text, err := sharelink.ReadClipboard()
 	if err != nil {
 		notify.Error(paths.AppName, i18n.T("import_empty"))
@@ -661,6 +684,10 @@ func (c *Controller) importSubscription() {
 }
 
 func (c *Controller) updateSavedSubscriptions() {
+	if err := c.useHomeProfileForNodes(); err != nil {
+		notify.Error(paths.AppName, i18n.T("save_failed")+err.Error())
+		return
+	}
 	items, err := config.LoadSubscriptions()
 	if err != nil || len(items) == 0 {
 		notify.Info(paths.AppName, i18n.T("sub_none"))
@@ -705,8 +732,37 @@ func (c *Controller) updateSavedSubscriptions() {
 	notify.Info(paths.AppName, fmt.Sprintf(i18n.T("sub_updated"), total))
 }
 
-// applyImportedNodes writes nodes into the active config and returns their tags.
+// useHomeProfileForNodes switches ActiveConfig to config.json so 节点/订阅
+// never write into an imported full template.
+func (c *Controller) useHomeProfileForNodes() error {
+	if c.App == nil {
+		return fmt.Errorf("no app settings")
+	}
+	if !config.IsDefaultConfigName(c.App.ActiveConfig) {
+		c.App.ActiveConfig = config.DefaultConfigFile
+		if err := config.SaveAppSettings(c.App); err != nil {
+			return err
+		}
+		c.rewatchActiveConfig()
+		c.refreshConfigMenu()
+	}
+	// Ensure home file exists (bootstrap usually created it).
+	path, err := config.ActiveConfigPath(c.App)
+	if err != nil {
+		return err
+	}
+	if _, err := os.Stat(path); err != nil {
+		return fmt.Errorf("default %s missing — reopen app to recreate", config.DefaultConfigFile)
+	}
+	return nil
+}
+
+// applyImportedNodes writes nodes into the home profile and returns their tags.
 func (c *Controller) applyImportedNodes(nodes []sharelink.Node) []string {
+	if err := c.useHomeProfileForNodes(); err != nil {
+		notify.Error(paths.AppName, i18n.T("save_failed")+err.Error())
+		return nil
+	}
 	c.suppressConfigWatch(3 * time.Second)
 	tags, err := config.AddNodesToActiveConfig(c.App, nodes)
 	if err != nil {
@@ -876,11 +932,11 @@ func (c *Controller) applyMenuLanguage() {
 	set(c.mSubscribe, "import_subscribe")
 	set(c.mUpdateSubs, "update_subs")
 	set(c.mDeleteSubs, "menu_delete_sub")
-	set(c.mAdd, "menu_add")
 	set(c.mImport, "import_clipboard")
 	set(c.mImportConfig, "import_config")
 	c.refreshSubDeleteMenu()
 	set(c.mConfigs, "configs")
+	set(c.mDeleteConfigs, "menu_delete_config")
 	set(c.mSettings, "menu_settings")
 	set(c.mAutostart, "autostart")
 	set(c.mAutoProxy, "auto_proxy")
@@ -909,6 +965,10 @@ func (c *Controller) applyMenuLanguage() {
 }
 
 func (c *Controller) importFromClipboard() {
+	if err := c.useHomeProfileForNodes(); err != nil {
+		notify.Error(paths.AppName, i18n.T("save_failed")+err.Error())
+		return
+	}
 	text, err := sharelink.ReadClipboard()
 	if err != nil {
 		notify.Error(paths.AppName, i18n.T("import_empty"))
@@ -960,6 +1020,27 @@ func (c *Controller) initConfigSlots() {
 	}
 	c.mConfigsEmpty = c.mConfigs.AddSubMenuItem(i18n.T("no_config"), "")
 	c.mConfigsEmpty.Disable()
+
+	// 导入配置文件 — 与订阅分组方式一致，放在「配置文件」里
+	c.mImportConfig = c.mConfigs.AddSubMenuItem(i18n.T("import_config"), "")
+
+	// 删除配置文件 ▸
+	c.mDeleteConfigs = c.mConfigs.AddSubMenuItem(i18n.T("menu_delete_config"), "")
+	c.configDelSlots = make([]*systray.MenuItem, maxConfigSlots)
+	c.configDelNames = make([]string, maxConfigSlots)
+	for i := 0; i < maxConfigSlots; i++ {
+		mi := c.mDeleteConfigs.AddSubMenuItem("—", "")
+		mi.Hide()
+		c.configDelSlots[i] = mi
+		idx := i
+		go func() {
+			for range mi.ClickedCh {
+				c.onConfigDelete(idx)
+			}
+		}()
+	}
+	c.mDeleteCfgEmpty = c.mDeleteConfigs.AddSubMenuItem(i18n.T("no_config"), "")
+	c.mDeleteCfgEmpty.Disable()
 }
 
 func (c *Controller) onConfigClick(idx int) {
@@ -1013,6 +1094,7 @@ func (c *Controller) refreshConfigMenu() {
 				mi.Hide()
 			}
 		}
+		c.fillConfigDeleteSlots(nil)
 		return
 	}
 	if c.mConfigsEmpty != nil {
@@ -1039,6 +1121,76 @@ func (c *Controller) refreshConfigMenu() {
 			mi.Uncheck()
 		}
 	}
+	c.fillConfigDeleteSlots(names)
+}
+
+func (c *Controller) fillConfigDeleteSlots(names []string) {
+	if c.mDeleteConfigs == nil {
+		return
+	}
+	if len(names) == 0 {
+		if c.mDeleteCfgEmpty != nil {
+			c.mDeleteCfgEmpty.SetTitle(i18n.T("no_config"))
+			c.mDeleteCfgEmpty.Show()
+		}
+		for i, mi := range c.configDelSlots {
+			c.configDelNames[i] = ""
+			if mi != nil {
+				mi.Hide()
+			}
+		}
+		return
+	}
+	if c.mDeleteCfgEmpty != nil {
+		c.mDeleteCfgEmpty.Hide()
+	}
+	for i := 0; i < maxConfigSlots; i++ {
+		mi := c.configDelSlots[i]
+		if mi == nil {
+			continue
+		}
+		if i >= len(names) {
+			c.configDelNames[i] = ""
+			mi.Hide()
+			continue
+		}
+		c.configDelNames[i] = names[i]
+		mi.SetTitle(names[i])
+		mi.Show()
+	}
+}
+
+func (c *Controller) onConfigDelete(idx int) {
+	if idx < 0 || idx >= len(c.configDelNames) {
+		return
+	}
+	name := c.configDelNames[idx]
+	if name == "" {
+		return
+	}
+	wasActive := c.App != nil && c.App.ActiveConfig == name
+	running := c.Core != nil && c.Core.Running()
+
+	c.suppressConfigWatch(3 * time.Second)
+	if err := config.DeleteConfigFile(c.App, name); err != nil {
+		notify.Error(paths.AppName, i18n.T("cfg_delete_fail")+err.Error())
+		return
+	}
+	c.refreshConfigMenu()
+	c.rewatchActiveConfig()
+	c.refreshNodeMenu()
+
+	if wasActive && running {
+		_ = c.stopProxy()
+		// If another config remains, try start with it.
+		if names, err := config.ListConfigFiles(); err == nil && len(names) > 0 {
+			if err := c.startProxy(); err != nil {
+				notify.Error(paths.AppName, i18n.T("cfg_deleted")+name+" — "+err.Error())
+				return
+			}
+		}
+	}
+	notify.Info(paths.AppName, i18n.T("cfg_deleted")+name)
 }
 
 func (c *Controller) selectConfig(name string) {

@@ -3,7 +3,6 @@ package tray
 import (
 	"fmt"
 	"log"
-	"strings"
 	"time"
 
 	"github.com/getlantern/systray"
@@ -21,6 +20,7 @@ func (c *Controller) initNodeSlots() {
 	c.mNodes = systray.AddMenuItem(i18n.T("menu_nodes"), "")
 	c.nodeSlots = make([]*systray.MenuItem, maxNodeSlots)
 	c.nodeTags = make([]string, maxNodeSlots)
+	c.nodeGroups = make([]string, maxNodeSlots)
 	for i := 0; i < maxNodeSlots; i++ {
 		mi := c.mNodes.AddSubMenuItemCheckbox("—", "", false)
 		mi.Hide()
@@ -34,6 +34,9 @@ func (c *Controller) initNodeSlots() {
 	}
 	c.mNodesEmpty = c.mNodes.AddSubMenuItem(i18n.T("nodes_empty"), "")
 	c.mNodesEmpty.Disable()
+
+	// 导入节点（剪贴板）— 与订阅分组方式一致，放在「节点」里
+	c.mImport = c.mNodes.AddSubMenuItem(i18n.T("import_clipboard"), "")
 
 	// Tray menus do not support true right-click on items; use a delete submenu.
 	c.mDeleteNodes = c.mNodes.AddSubMenuItem(i18n.T("menu_delete_node"), "")
@@ -62,15 +65,36 @@ func (c *Controller) onNodeClick(idx int) {
 	if tag == "" {
 		return
 	}
-	group := c.selectorTag
+	group := c.nodeGroups[idx]
+	if group == "" {
+		group = c.selectorTag
+	}
 	if group == "" {
 		group = "proxy"
+	}
+	primary := c.selectorTag
+	if primary == "" {
+		primary = "proxy"
 	}
 
 	// Prefer live Clash API (no full restart).
 	cli := clashapi.New(clashapi.DefaultAddr)
-	if err := cli.Select(group, tag); err != nil {
-		log.Println("clash select:", err)
+	// 1) Select leaf inside its group (e.g. Singapore urltest → 🚜🇸🇬 -FREE)
+	err := cli.Select(group, tag)
+	if err != nil {
+		log.Println("clash select", group, tag, err)
+	}
+	// 2) If leaf sits under a region group, also point top selector at that region
+	//    (Manual → Singapore) so traffic actually uses it.
+	if primary != "" && primary != group {
+		if err2 := cli.Select(primary, group); err2 != nil {
+			log.Println("clash select primary", primary, group, err2)
+			// try selecting leaf directly on primary (simple proxy configs)
+			_ = cli.Select(primary, tag)
+		}
+	}
+
+	if err != nil {
 		// Fallback: write default + restart
 		path, err2 := config.ActiveConfigPath(c.App)
 		if err2 != nil {
@@ -78,6 +102,9 @@ func (c *Controller) onNodeClick(idx int) {
 			return
 		}
 		_ = config.SetSelectorDefault(path, group, tag)
+		if primary != group {
+			_ = config.SetSelectorDefault(path, primary, group)
+		}
 		if c.Core.Running() {
 			_ = c.stopProxy()
 			if err3 := c.startProxy(); err3 != nil {
@@ -89,6 +116,9 @@ func (c *Controller) onNodeClick(idx int) {
 		// Persist choice to user config
 		if path, err := config.ActiveConfigPath(c.App); err == nil {
 			_ = config.SetSelectorDefault(path, group, tag)
+			if primary != group {
+				_ = config.SetSelectorDefault(path, primary, group)
+			}
 		}
 	}
 
@@ -132,69 +162,60 @@ func (c *Controller) onNodeDelete(idx int) {
 	notify.Info(paths.AppName, i18n.T("node_deleted")+tag)
 }
 
-// refreshNodeMenu rebuilds visible node entries from config / Clash API.
+// refreshNodeMenu rebuilds visible node entries for the home profile only.
 func (c *Controller) refreshNodeMenu() {
 	if c.mNodes == nil {
 		return
 	}
-	var members []string
-	var now string
-	group := "proxy"
+	var (
+		members []string
+		groups  []string // parallel: clash group for each member
+		now     string
+		primary = "proxy"
+	)
 
-	// Prefer config file for the delete list (source of truth).
-	// Live API only for current selection checkmark when running.
+	// Only default config.json uses the 节点 menu; other profiles → Dashboard.
+	homeProfile := c.App != nil && config.IsDefaultConfigName(c.App.ActiveConfig)
+
 	path, err := config.ActiveConfigPath(c.App)
-	if err == nil {
-		sels, err := config.ListSelectors(path)
+	if err == nil && homeProfile {
+		p, nodes, cur, err := config.ListSwitchableNodes(path)
 		if err == nil {
-			for _, s := range sels {
-				if s.Tag == "proxy" || group == s.Tag {
-					group = s.Tag
-					members = s.Outbounds
-					now = s.Default
-					break
-				}
+			if p != "" {
+				primary = p
 			}
-			if len(members) == 0 && len(sels) > 0 {
-				group = sels[0].Tag
-				members = sels[0].Outbounds
-				now = sels[0].Default
-			}
-		}
-	}
-	// Overlay live "now" from Clash API when running.
-	if c.Core != nil && c.Core.Running() {
-		cli := clashapi.New(clashapi.DefaultAddr)
-		if n, all, err := cli.GroupNow(group); err == nil {
-			if n != "" {
-				now = n
-			}
-			// If config list empty but API has members, use API list for display.
-			if len(members) == 0 && len(all) > 0 {
-				members = all
+			now = cur
+			for _, n := range nodes {
+				members = append(members, n.Tag)
+				groups = append(groups, n.Group)
 			}
 		}
 	}
 
-	// filter junk
-	var clean []string
-	for _, m := range members {
-		low := strings.ToLower(m)
-		if low == "direct" || low == "block" || low == "dns" || low == "reject" {
-			continue
+	// Overlay live "now" from Clash API when running (home profile only).
+	if homeProfile && c.Core != nil && c.Core.Running() && primary != "" {
+		cli := clashapi.New(clashapi.DefaultAddr)
+		if n, _, err := cli.GroupNow(primary); err == nil && n != "" {
+			now = n
 		}
-		clean = append(clean, m)
 	}
-	members = clean
-	c.selectorTag = group
+
+	c.selectorTag = primary
 
 	if len(members) == 0 {
 		if c.mNodesEmpty != nil {
-			c.mNodesEmpty.SetTitle(i18n.T("nodes_empty"))
+			emptyMsg := i18n.T("nodes_empty")
+			if !homeProfile {
+				emptyMsg = i18n.T("nodes_use_dashboard")
+			}
+			c.mNodesEmpty.SetTitle(emptyMsg)
 			c.mNodesEmpty.Show()
 		}
 		for i, mi := range c.nodeSlots {
 			c.nodeTags[i] = ""
+			if i < len(c.nodeGroups) {
+				c.nodeGroups[i] = ""
+			}
 			if mi != nil {
 				mi.Hide()
 			}
@@ -213,11 +234,19 @@ func (c *Controller) refreshNodeMenu() {
 		}
 		if i >= len(members) {
 			c.nodeTags[i] = ""
+			if i < len(c.nodeGroups) {
+				c.nodeGroups[i] = ""
+			}
 			mi.Hide()
 			continue
 		}
 		tag := members[i]
 		c.nodeTags[i] = tag
+		if i < len(groups) {
+			c.nodeGroups[i] = groups[i]
+		} else {
+			c.nodeGroups[i] = primary
+		}
 		mi.SetTitle(tag)
 		mi.Show()
 		if tag == now {
@@ -232,10 +261,9 @@ func (c *Controller) refreshNodeMenu() {
 const maxSubSlots = 16
 
 func (c *Controller) initSubDeleteSlots() {
-	// Parent is the top-level 订阅 group (mSubs), not 添加.
 	parent := c.mSubs
 	if parent == nil {
-		parent = c.mAdd
+		return
 	}
 	c.mDeleteSubs = parent.AddSubMenuItem(i18n.T("menu_delete_sub"), "")
 	c.subDelSlots = make([]*systray.MenuItem, maxSubSlots)
