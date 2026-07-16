@@ -5,9 +5,57 @@ import (
 	"fmt"
 	"net"
 	"net/url"
+	"regexp"
 	"strconv"
 	"strings"
 )
+
+// UUID accepted by sing-box (standard form, or 32-hex without dashes).
+var (
+	uuidDashedRe = regexp.MustCompile(`(?i)^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
+	uuidHex32Re  = regexp.MustCompile(`(?i)^[0-9a-f]{32}$`)
+)
+
+// normalizeUUID trims and accepts standard UUID or 32-hex form.
+// Returns canonical lowercase dashed form, or error if invalid.
+func normalizeUUID(s string) (string, error) {
+	s = strings.TrimSpace(s)
+	s = strings.Trim(s, "{}")
+	s = strings.ToLower(s)
+	if s == "" {
+		return "", fmt.Errorf("empty uuid")
+	}
+	if uuidDashedRe.MatchString(s) {
+		return s, nil
+	}
+	// some panels export id without dashes
+	if uuidHex32Re.MatchString(s) {
+		return s[0:8] + "-" + s[8:12] + "-" + s[12:16] + "-" + s[16:20] + "-" + s[20:32], nil
+	}
+	return "", fmt.Errorf("invalid uuid %q", s)
+}
+
+// splitUUIDPassword handles common TUIC mistakes where uuid and password are
+// glued as "uuid:password" in a single field (or URL-encoded as one username).
+// Returns (uuid, passwordExtra). passwordExtra is empty if no split applied.
+func splitUUIDPassword(raw string) (uuidPart, passwordPart string) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return "", ""
+	}
+	// Already a pure UUID — nothing to split.
+	if _, err := normalizeUUID(raw); err == nil {
+		return raw, ""
+	}
+	// uuid:password (password may contain ':')
+	if i := strings.Index(raw, ":"); i > 0 {
+		left, right := raw[:i], raw[i+1:]
+		if _, err := normalizeUUID(left); err == nil && right != "" {
+			return left, right
+		}
+	}
+	return raw, ""
+}
 
 func decodeBase64(s string) (string, error) {
 	s = strings.TrimSpace(s)

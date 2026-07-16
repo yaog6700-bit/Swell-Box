@@ -75,11 +75,15 @@ type Controller struct {
 	configItems    []*systray.MenuItem
 	configNames    []string
 
-	// Dynamic node slots
-	nodeSlots   []*systray.MenuItem
-	nodeTags    []string
-	mNodesEmpty *systray.MenuItem
-	selectorTag string
+	// Dynamic node slots (switch + delete)
+	nodeSlots      []*systray.MenuItem
+	nodeTags       []string
+	mNodesEmpty    *systray.MenuItem
+	mDeleteNodes   *systray.MenuItem
+	deleteSlots    []*systray.MenuItem
+	deleteTags     []string
+	mDeleteEmpty   *systray.MenuItem
+	selectorTag    string
 
 	// Config file watcher
 	cfgWatch       *watch.ConfigWatcher
@@ -398,7 +402,36 @@ func (c *Controller) toggleTunMode() {
 	if c.App == nil {
 		return
 	}
-	c.App.TunMode = !c.App.TunMode
+	want := !c.App.TunMode
+
+	// Enabling TUN without admin: prompt for UAC relaunch instead of failing later.
+	if want && !app.IsElevated() {
+		if !app.ConfirmYesNo(i18n.T("tun_elevate_title"), i18n.T("tun_elevate_body")) {
+			// Keep menu unchecked; nothing saved.
+			if c.mTunMode != nil {
+				c.mTunMode.Uncheck()
+			}
+			notify.Info(paths.AppName, i18n.T("tun_elevate_cancel"))
+			return
+		}
+		// Persist TUN on, drop system proxy, then elevate-restart.
+		c.App.TunMode = true
+		if c.App.SystemProxy {
+			c.App.SystemProxy = false
+			if c.mSysProxy != nil {
+				c.mSysProxy.Uncheck()
+			}
+			_ = sysproxy.Restore()
+		}
+		if c.mTunMode != nil {
+			c.mTunMode.Check()
+		}
+		_ = config.SaveAppSettings(c.App)
+		c.elevateAndExit()
+		return
+	}
+
+	c.App.TunMode = want
 	if c.App.TunMode {
 		// TUN captures traffic at OS level — turn off system HTTP proxy.
 		if c.App.SystemProxy {
@@ -412,9 +445,6 @@ func (c *Controller) toggleTunMode() {
 			c.mTunMode.Check()
 		}
 		_ = config.SaveAppSettings(c.App)
-		if !app.IsElevated() {
-			notify.Info(paths.AppName, i18n.TName("tun_admin_hint"))
-		}
 		notify.Info(paths.AppName, i18n.T("tun_on"))
 	} else {
 		if c.mTunMode != nil {
@@ -428,6 +458,31 @@ func (c *Controller) toggleTunMode() {
 	if c.Core != nil && c.Core.Running() {
 		c.reloadProxyForTun()
 	}
+}
+
+// elevateAndExit stops proxy, requests UAC relaunch, then exits this process.
+func (c *Controller) elevateAndExit() {
+	_ = c.stopProxy()
+	_ = sysproxy.Restore()
+	if err := app.RelaunchElevated(); err != nil {
+		// User cancelled UAC or ShellExecute failed — roll back TUN flag.
+		if c.App != nil {
+			c.App.TunMode = false
+			_ = config.SaveAppSettings(c.App)
+		}
+		if c.mTunMode != nil {
+			c.mTunMode.Uncheck()
+		}
+		c.refreshTrayIcon()
+		if err.Error() == "uac cancelled" {
+			notify.Info(paths.AppName, i18n.T("tun_elevate_cancel"))
+			return
+		}
+		notify.Error(paths.AppName, i18n.T("tun_elevate_fail")+err.Error())
+		return
+	}
+	// Elevated instance is starting; quit this non-admin process.
+	systray.Quit()
 }
 
 func (c *Controller) reloadProxyForTun() {
@@ -873,6 +928,15 @@ func (c *Controller) startProxy() error {
 	// Download core outside the lock (network).
 	if err := c.ensureCoreSync(); err != nil {
 		return fmt.Errorf("%s%w", i18n.T("core_download_fail"), err)
+	}
+
+	// TUN without admin: ask to elevate instead of letting sing-box die with Access denied.
+	if c.App != nil && c.App.TunMode && !app.IsElevated() {
+		if app.ConfirmYesNo(i18n.T("tun_elevate_title"), i18n.T("tun_elevate_body")) {
+			c.elevateAndExit()
+			return fmt.Errorf("%s", i18n.T("tun_need_admin"))
+		}
+		return fmt.Errorf("%s", i18n.T("tun_elevate_cancel"))
 	}
 
 	c.mu.Lock()

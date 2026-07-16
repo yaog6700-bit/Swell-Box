@@ -62,6 +62,49 @@ func TestParseVMessJSON(t *testing.T) {
 	}
 }
 
+func TestParseTUICGluedUUIDPassword(t *testing.T) {
+	// Username incorrectly contains "uuid:password" as one field (URL-encoded colon).
+	link := "tuic://33333333-3333-4333-8333-333333333333%3Abluesky333@i.coffee.bbroot.com:55543?congestion_control=bbr#TUIC-BBroot"
+	nodes, err := Parse(link)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ob := nodes[0].Outbound
+	if ob["uuid"] != "33333333-3333-4333-8333-333333333333" {
+		t.Fatalf("uuid=%v", ob["uuid"])
+	}
+	if ob["password"] != "bluesky333" {
+		t.Fatalf("password=%v", ob["password"])
+	}
+}
+
+func TestNormalizeUUID(t *testing.T) {
+	ok, err := normalizeUUID("11111111-1111-1111-1111-111111111111")
+	if err != nil || ok != "11111111-1111-1111-1111-111111111111" {
+		t.Fatalf("dashed: %v %v", ok, err)
+	}
+	ok, err = normalizeUUID("11111111111111111111111111111111")
+	if err != nil || ok != "11111111-1111-1111-1111-111111111111" {
+		t.Fatalf("hex32: %v %v", ok, err)
+	}
+	if _, err := normalizeUUID("not-a-uuid"); err == nil {
+		t.Fatal("expected invalid")
+	}
+	if _, err := normalizeUUID(""); err == nil {
+		t.Fatal("expected empty invalid")
+	}
+}
+
+func TestParseVLESSBadUUID(t *testing.T) {
+	_, err := Parse("vless://bad-id@1.2.3.4:443?encryption=none#x")
+	if err == nil {
+		t.Fatal("expected invalid uuid error")
+	}
+	if !strings.Contains(err.Error(), "uuid") {
+		t.Fatalf("err=%v", err)
+	}
+}
+
 func TestParseVLESSReality(t *testing.T) {
 	link := "vless://11111111-1111-1111-1111-111111111111@1.2.3.4:443?encryption=none&flow=xtls-rprx-vision&security=reality&sni=www.example.com&fp=chrome&pbk=PUBLICKEY&sid=abcd&type=tcp#RL"
 	nodes, err := Parse(link)

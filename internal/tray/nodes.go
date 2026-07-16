@@ -3,6 +3,7 @@ package tray
 import (
 	"log"
 	"strings"
+	"time"
 
 	"github.com/getlantern/systray"
 
@@ -32,6 +33,24 @@ func (c *Controller) initNodeSlots() {
 	}
 	c.mNodesEmpty = c.mNodes.AddSubMenuItem(i18n.T("nodes_empty"), "")
 	c.mNodesEmpty.Disable()
+
+	// Tray menus do not support true right-click on items; use a delete submenu.
+	c.mDeleteNodes = c.mNodes.AddSubMenuItem(i18n.T("menu_delete_node"), "")
+	c.deleteSlots = make([]*systray.MenuItem, maxNodeSlots)
+	c.deleteTags = make([]string, maxNodeSlots)
+	for i := 0; i < maxNodeSlots; i++ {
+		mi := c.mDeleteNodes.AddSubMenuItem("—", "")
+		mi.Hide()
+		c.deleteSlots[i] = mi
+		idx := i
+		go func() {
+			for range mi.ClickedCh {
+				c.onNodeDelete(idx)
+			}
+		}()
+	}
+	c.mDeleteEmpty = c.mDeleteNodes.AddSubMenuItem(i18n.T("nodes_empty"), "")
+	c.mDeleteEmpty.Disable()
 }
 
 func (c *Controller) onNodeClick(idx int) {
@@ -85,6 +104,33 @@ func (c *Controller) onNodeClick(idx int) {
 	notify.Info(paths.AppName, i18n.T("node_switched")+tag)
 }
 
+func (c *Controller) onNodeDelete(idx int) {
+	if idx < 0 || idx >= len(c.deleteTags) {
+		return
+	}
+	tag := c.deleteTags[idx]
+	if tag == "" {
+		return
+	}
+	c.suppressConfigWatch(3 * time.Second)
+	if err := config.RemoveNodeFromConfig(c.App, tag); err != nil {
+		notify.Error(paths.AppName, i18n.T("node_delete_fail")+err.Error())
+		return
+	}
+	c.refreshNodeMenu()
+	// Reload core so the bad/removed outbound is gone from runtime.
+	if c.Core != nil && c.Core.Running() {
+		_ = c.stopProxy()
+		if err := c.startProxy(); err != nil {
+			notify.Error(paths.AppName, i18n.T("node_deleted")+tag+" — "+err.Error())
+			return
+		}
+		notify.Info(paths.AppName, i18n.T("node_deleted")+tag+i18n.T("imported_restart"))
+		return
+	}
+	notify.Info(paths.AppName, i18n.T("node_deleted")+tag)
+}
+
 // refreshNodeMenu rebuilds visible node entries from config / Clash API.
 func (c *Controller) refreshNodeMenu() {
 	if c.mNodes == nil {
@@ -94,31 +140,37 @@ func (c *Controller) refreshNodeMenu() {
 	var now string
 	group := "proxy"
 
-	// Try live API first when running
-	if c.Core != nil && c.Core.Running() {
-		cli := clashapi.New(clashapi.DefaultAddr)
-		if n, all, err := cli.GroupNow(group); err == nil && len(all) > 0 {
-			now, members = n, all
+	// Prefer config file for the delete list (source of truth).
+	// Live API only for current selection checkmark when running.
+	path, err := config.ActiveConfigPath(c.App)
+	if err == nil {
+		sels, err := config.ListSelectors(path)
+		if err == nil {
+			for _, s := range sels {
+				if s.Tag == "proxy" || group == s.Tag {
+					group = s.Tag
+					members = s.Outbounds
+					now = s.Default
+					break
+				}
+			}
+			if len(members) == 0 && len(sels) > 0 {
+				group = sels[0].Tag
+				members = sels[0].Outbounds
+				now = sels[0].Default
+			}
 		}
 	}
-	if len(members) == 0 {
-		path, err := config.ActiveConfigPath(c.App)
-		if err == nil {
-			sels, err := config.ListSelectors(path)
-			if err == nil {
-				for _, s := range sels {
-					if s.Tag == "proxy" || group == s.Tag {
-						group = s.Tag
-						members = s.Outbounds
-						now = s.Default
-						break
-					}
-				}
-				if len(members) == 0 && len(sels) > 0 {
-					group = sels[0].Tag
-					members = sels[0].Outbounds
-					now = sels[0].Default
-				}
+	// Overlay live "now" from Clash API when running.
+	if c.Core != nil && c.Core.Running() {
+		cli := clashapi.New(clashapi.DefaultAddr)
+		if n, all, err := cli.GroupNow(group); err == nil {
+			if n != "" {
+				now = n
+			}
+			// If config list empty but API has members, use API list for display.
+			if len(members) == 0 && len(all) > 0 {
+				members = all
 			}
 		}
 	}
@@ -146,6 +198,7 @@ func (c *Controller) refreshNodeMenu() {
 				mi.Hide()
 			}
 		}
+		c.fillDeleteSlots(nil)
 		return
 	}
 	if c.mNodesEmpty != nil {
@@ -171,5 +224,43 @@ func (c *Controller) refreshNodeMenu() {
 		} else {
 			mi.Uncheck()
 		}
+	}
+	c.fillDeleteSlots(members)
+}
+
+func (c *Controller) fillDeleteSlots(members []string) {
+	if c.mDeleteNodes == nil {
+		return
+	}
+	if len(members) == 0 {
+		if c.mDeleteEmpty != nil {
+			c.mDeleteEmpty.SetTitle(i18n.T("nodes_empty"))
+			c.mDeleteEmpty.Show()
+		}
+		for i, mi := range c.deleteSlots {
+			c.deleteTags[i] = ""
+			if mi != nil {
+				mi.Hide()
+			}
+		}
+		return
+	}
+	if c.mDeleteEmpty != nil {
+		c.mDeleteEmpty.Hide()
+	}
+	for i := 0; i < maxNodeSlots; i++ {
+		mi := c.deleteSlots[i]
+		if mi == nil {
+			continue
+		}
+		if i >= len(members) {
+			c.deleteTags[i] = ""
+			mi.Hide()
+			continue
+		}
+		tag := members[i]
+		c.deleteTags[i] = tag
+		mi.SetTitle(tag)
+		mi.Show()
 	}
 }

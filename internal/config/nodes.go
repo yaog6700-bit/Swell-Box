@@ -123,6 +123,111 @@ func AddNodesToActiveConfig(settings *AppSettings, nodes []sharelink.Node) (tags
 	return tags, nil
 }
 
+// RemoveNodeFromConfig deletes a leaf outbound by tag from the active config,
+// removes it from all selector member lists, and fixes selector defaults.
+// Built-in tags (direct/block/dns/reject) cannot be removed.
+func RemoveNodeFromConfig(settings *AppSettings, tag string) error {
+	tag = strings.TrimSpace(tag)
+	if tag == "" {
+		return fmt.Errorf("empty tag")
+	}
+	low := strings.ToLower(tag)
+	if low == "direct" || low == "block" || low == "dns" || low == "reject" {
+		return fmt.Errorf("cannot remove built-in outbound %q", tag)
+	}
+	path, err := ActiveConfigPath(settings)
+	if err != nil {
+		return err
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	var root map[string]any
+	if err := json.Unmarshal(raw, &root); err != nil {
+		return fmt.Errorf("parse config: %w", err)
+	}
+
+	outbounds, _ := root["outbounds"].([]any)
+	var kept []any
+	removed := false
+	for _, item := range outbounds {
+		m, ok := item.(map[string]any)
+		if !ok {
+			kept = append(kept, item)
+			continue
+		}
+		t, _ := m["type"].(string)
+		// Never drop selectors / groups — only strip the tag from their lists.
+		if t == "selector" || t == "urltest" {
+			if list := toStringSlice(m["outbounds"]); len(list) > 0 {
+				var next []string
+				for _, o := range list {
+					if o != tag {
+						next = append(next, o)
+					}
+				}
+				m["outbounds"] = toAnySlice(next)
+				if def, _ := m["default"].(string); def == tag {
+					// Pick first remaining non-empty member, prefer non-direct.
+					newDef := ""
+					for _, o := range next {
+						if o != "" && strings.ToLower(o) != "direct" {
+							newDef = o
+							break
+						}
+					}
+					if newDef == "" && len(next) > 0 {
+						newDef = next[0]
+					}
+					if newDef != "" {
+						m["default"] = newDef
+					} else {
+						delete(m, "default")
+					}
+				}
+			}
+			kept = append(kept, m)
+			continue
+		}
+		if name, _ := m["tag"].(string); name == tag {
+			removed = true
+			continue
+		}
+		kept = append(kept, item)
+	}
+	if !removed {
+		// Still OK if it was only a dangling selector reference.
+		// But report if nothing referenced it either.
+		foundInSelector := false
+		for _, item := range outbounds {
+			m, ok := item.(map[string]any)
+			if !ok {
+				continue
+			}
+			t, _ := m["type"].(string)
+			if t != "selector" && t != "urltest" {
+				continue
+			}
+			for _, o := range toStringSlice(m["outbounds"]) {
+				if o == tag {
+					foundInSelector = true
+					break
+				}
+			}
+		}
+		if !foundInSelector {
+			return fmt.Errorf("node %q not found", tag)
+		}
+	}
+	root["outbounds"] = kept
+	out, err := json.MarshalIndent(root, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, out, 0o644)
+}
+
 func uniqueTag(base string, existing map[string]int) string {
 	base = strings.TrimSpace(base)
 	if base == "" {

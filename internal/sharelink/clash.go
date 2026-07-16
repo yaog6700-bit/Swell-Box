@@ -345,6 +345,11 @@ func clashVMess(tag, server string, port int, pos []string, kv map[string]string
 	if uuid == "" {
 		return Node{}, fmt.Errorf("vmess: missing uuid")
 	}
+	var err error
+	uuid, err = normalizeUUID(uuid)
+	if err != nil {
+		return Node{}, fmt.Errorf("vmess: %w", err)
+	}
 	security := clashGet(kv, "cipher", "security", "scy")
 	if security == "" {
 		security = "auto"
@@ -398,6 +403,11 @@ func clashVLESS(tag, server string, port int, pos []string, kv map[string]string
 	}
 	if uuid == "" {
 		return Node{}, fmt.Errorf("vless: missing uuid")
+	}
+	var err error
+	uuid, err = normalizeUUID(uuid)
+	if err != nil {
+		return Node{}, fmt.Errorf("vless: %w", err)
 	}
 	ob := map[string]any{
 		"type":            "vless",
@@ -532,6 +542,17 @@ func clashTUIC(tag, server string, port int, kv map[string]string) (Node, error)
 	password := clashGet(kv, "password")
 	if uuid == "" {
 		return Node{}, fmt.Errorf("tuic: missing uuid")
+	}
+	if u2, p2 := splitUUIDPassword(uuid); p2 != "" {
+		uuid = u2
+		if password == "" {
+			password = p2
+		}
+	}
+	var err error
+	uuid, err = normalizeUUID(uuid)
+	if err != nil {
+		return Node{}, fmt.Errorf("tuic: %w", err)
 	}
 	ob := map[string]any{
 		"type":        "tuic",

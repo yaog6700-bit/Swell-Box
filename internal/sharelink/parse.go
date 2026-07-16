@@ -263,6 +263,10 @@ func parseVMess(line string) (Node, error) {
 	if uuid == "" || host == "" || port == 0 {
 		return Node{}, fmt.Errorf("vmess: incomplete fields (need base64 JSON or uuid@host:port)")
 	}
+	uuid, err = normalizeUUID(uuid)
+	if err != nil {
+		return Node{}, fmt.Errorf("vmess: %w", err)
+	}
 	q := u.Query()
 	tag := tagFromFragment(u.Fragment, "vmess-"+host)
 	// encryption / scy = cipher; security query often means TLS (handled by applyTLS)
@@ -300,6 +304,11 @@ func parseVMessJSON(decoded, frag string) (Node, error) {
 	uuid := anyString(m["id"])
 	if host == "" || port == 0 || uuid == "" {
 		return Node{}, fmt.Errorf("vmess: incomplete fields")
+	}
+	var err error
+	uuid, err = normalizeUUID(uuid)
+	if err != nil {
+		return Node{}, fmt.Errorf("vmess: %w", err)
 	}
 	ps := anyString(m["ps"])
 	if ps == "" {
@@ -393,6 +402,10 @@ func parseVLESS(line string) (Node, error) {
 	port, _ := strconv.Atoi(u.Port())
 	if uuid == "" || host == "" || port == 0 {
 		return Node{}, fmt.Errorf("vless: incomplete fields")
+	}
+	uuid, err = normalizeUUID(uuid)
+	if err != nil {
+		return Node{}, fmt.Errorf("vless: %w", err)
 	}
 	q := u.Query()
 	tag := tagFromFragment(u.Fragment, "vless-"+host)
@@ -659,10 +672,21 @@ func parseTUIC(line string) (Node, error) {
 	if uuid == "" {
 		uuid = queryFirst(q, "uuid")
 	}
+	// Fix glued "uuid:password" (bad panel / clipboard paste / %3A in username).
+	if u2, p2 := splitUUIDPassword(uuid); p2 != "" {
+		uuid = u2
+		if password == "" {
+			password = p2
+		}
+	}
 	host := u.Hostname()
 	port, _ := strconv.Atoi(u.Port())
 	if uuid == "" || host == "" || port == 0 {
 		return Node{}, fmt.Errorf("tuic: incomplete fields")
+	}
+	uuid, err = normalizeUUID(uuid)
+	if err != nil {
+		return Node{}, fmt.Errorf("tuic: %w", err)
 	}
 	tag := tagFromFragment(u.Fragment, "tuic-"+host)
 	ob := map[string]any{
