@@ -94,15 +94,20 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p dist
+          # Use bash -c (not -lc): login shells drop image ENV PATH so `go` disappears.
           docker run --rm --platform linux/arm64 \
             -v "$PWD":/src -w /src \
             -e CGO_ENABLED=1 \
+            -e PATH="/usr/local/go/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" \
             golang:1.22-bookworm \
-            bash -lc '
+            bash -c '
               set -euo pipefail
               export DEBIAN_FRONTEND=noninteractive
+              export PATH="/usr/local/go/bin:$PATH"
+              command -v go
+              go version
               apt-get update
-              apt-get install -y --no-install-recommends libgtk-3-dev libayatana-appindicator3-dev
+              apt-get install -y --no-install-recommends libgtk-3-dev libayatana-appindicator3-dev pkg-config
               go build -ldflags "-s -w" -o dist/Swell-Box ./cmd/swellbox
               ls -la dist/Swell-Box
             '
