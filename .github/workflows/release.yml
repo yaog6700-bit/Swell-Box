@@ -159,7 +159,7 @@ jobs:
               go version
               apt-get update
               apt-get install -y --no-install-recommends libgtk-3-dev libayatana-appindicator3-dev pkg-config
-              go build -ldflags '${LDFLAGS}' -o dist/Swell-Box ./cmd/swellbox
+              go build -buildvcs=false -ldflags '${LDFLAGS}' -o dist/Swell-Box ./cmd/swellbox
               chmod +x dist/Swell-Box
               cp dist/Swell-Box dist/package/
               ls -la dist/Swell-Box
