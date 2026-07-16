@@ -65,6 +65,154 @@ func sanitizeOutboundGroups(root map[string]any) ([]string, error) {
 	return warns, nil
 }
 
+// convertFilledURLTestToSelector turns non-empty urltest groups into selector
+// groups in the runtime config only.
+//
+// Official Dashboard often treats URLTest as a single auto-pick unit and does
+// not let users open the group to choose among 🚜 / node-A / node-B. Selector
+// groups show the member list so users can pick a specific node. Disk template
+// stays urltest.
+func convertFilledURLTestToSelector(root map[string]any) {
+	outbounds, _ := root["outbounds"].([]any)
+	for _, item := range outbounds {
+		m, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		if t, _ := m["type"].(string); t != "urltest" {
+			continue
+		}
+		members := toStringSlice(m["outbounds"])
+		var clean []string
+		for _, s := range members {
+			s = strings.TrimSpace(s)
+			if s != "" {
+				clean = append(clean, s)
+			}
+		}
+		if len(clean) == 0 {
+			continue // empty groups handled by sanitize
+		}
+		m["type"] = "selector"
+		m["outbounds"] = toAnySlice(clean)
+		// urltest used "url" for latency; drop fields selector ignores / rejects
+		delete(m, "url")
+		delete(m, "interval")
+		delete(m, "tolerance")
+		delete(m, "idle_timeout")
+		delete(m, "interrupt_exist_connections")
+		if def, _ := m["default"].(string); def == "" {
+			m["default"] = clean[0]
+		}
+	}
+}
+
+// exposeNestedLeavesInSelectors appends leaf proxies that currently sit only
+// under region urltest/selector groups onto parent selectors (e.g. Manual).
+// Runtime-only: helps official Dashboard show real nodes without requiring
+// users to open nested Singapore → node. Disk template is unchanged.
+func exposeNestedLeavesInSelectors(root map[string]any) {
+	outbounds, _ := root["outbounds"].([]any)
+	if len(outbounds) == 0 {
+		return
+	}
+	type info struct {
+		typ     string
+		members []string
+	}
+	byTag := map[string]*info{}
+	for _, item := range outbounds {
+		m, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		tag, _ := m["tag"].(string)
+		if tag == "" {
+			continue
+		}
+		t, _ := m["type"].(string)
+		inf := &info{typ: t}
+		if t == "selector" || t == "urltest" {
+			inf.members = toStringSlice(m["outbounds"])
+		}
+		byTag[tag] = inf
+	}
+
+	// Collect leaves nested under each direct member of a selector.
+	leavesUnder := func(member string) []string {
+		inf, ok := byTag[member]
+		if !ok {
+			return nil
+		}
+		if inf.typ != "selector" && inf.typ != "urltest" {
+			return nil
+		}
+		var leaves []string
+		for _, c := range inf.members {
+			if c == "" || isJunkOutboundTag(c) {
+				continue
+			}
+			ci, ok := byTag[c]
+			if !ok {
+				// unknown → treat as leaf name
+				leaves = append(leaves, c)
+				continue
+			}
+			if ci.typ == "selector" || ci.typ == "urltest" || ci.typ == "direct" || ci.typ == "block" || ci.typ == "dns" {
+				continue
+			}
+			leaves = append(leaves, c)
+		}
+		return leaves
+	}
+
+	for _, item := range outbounds {
+		m, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		if t, _ := m["type"].(string); t != "selector" {
+			continue
+		}
+		// Skip huge policy selectors that already list many leaves; only
+		// expand groups that look like "region wrappers" (Manual-style).
+		tag, _ := m["tag"].(string)
+		members := toStringSlice(m["outbounds"])
+		if len(members) == 0 {
+			continue
+		}
+		// Only expand if at least one member is a nested group with leaves.
+		var extra []string
+		seen := map[string]bool{}
+		for _, mem := range members {
+			seen[mem] = true
+		}
+		for _, mem := range members {
+			for _, leaf := range leavesUnder(mem) {
+				if seen[leaf] {
+					continue
+				}
+				seen[leaf] = true
+				extra = append(extra, leaf)
+			}
+		}
+		if len(extra) == 0 {
+			continue
+		}
+		// Prepend leaves so they appear first in Dashboard / Clash UI.
+		newList := make([]string, 0, len(extra)+len(members))
+		newList = append(newList, extra...)
+		newList = append(newList, members...)
+		m["outbounds"] = toAnySlice(newList)
+		_ = tag
+	}
+}
+
+func isJunkOutboundTag(s string) bool {
+	low := strings.ToLower(strings.TrimSpace(s))
+	return low == "" || low == "direct" || low == "block" || low == "dns" || low == "reject"
+}
+
 func pickFallbackOutbound(outbounds []any) string {
 	var firstLeaf string
 	for _, item := range outbounds {

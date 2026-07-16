@@ -5,10 +5,12 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"time"
 
 	"github.com/swell-app/swellbox/internal/app"
 	"github.com/swell-app/swellbox/internal/config"
 	"github.com/swell-app/swellbox/internal/core"
+	"github.com/swell-app/swellbox/internal/notify"
 	"github.com/swell-app/swellbox/internal/paths"
 	"github.com/swell-app/swellbox/internal/seed"
 	"github.com/swell-app/swellbox/internal/tray"
@@ -19,6 +21,20 @@ func main() {
 	runtime.LockOSThread()
 	// Windows HiDPI: must run before any UI so tray menus render crisp (not bitmap-scaled).
 	app.EnableDPIAwareness()
+
+	// Single instance: second launch exits (no second tray icon / port fight).
+	ok, err := app.AcquireSingleInstance()
+	if err != nil {
+		log.Fatal("single instance: ", err)
+	}
+	if !ok {
+		// Non-blocking tip then exit so we don't leave a second process waiting on a dialog.
+		notify.Info(paths.AppName, "已在运行（只能开一个），请查看系统托盘。")
+		time.Sleep(400 * time.Millisecond)
+		os.Exit(0)
+	}
+	defer app.ReleaseSingleInstance()
+	defer core.CloseJob()
 
 	if err := app.BootstrapDataDir(seed.DefaultConfig, seed.IconOnPNG, app.RuleSetFiles{
 		GeositeCN: seed.GeositeCNSRS,

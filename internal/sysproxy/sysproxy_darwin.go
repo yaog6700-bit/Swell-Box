@@ -177,3 +177,7 @@ func splitHostPort(s string) (host, port string, ok bool) {
 	}
 	return s[:i], s[i+1:], true
 }
+
+// ClearLeftover is a no-op on Darwin (handled by Restore).
+func ClearLeftover() error { return nil }
+

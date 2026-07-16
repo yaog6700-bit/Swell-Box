@@ -152,6 +152,10 @@ func (m *Manager) Start() error {
 		m.mu.Unlock()
 		return fmt.Errorf("start sing-box: %w", err)
 	}
+	// Windows: put child in Job Object so it dies with Swell-Box (no residual).
+	if cmd.Process != nil {
+		assignToJob(cmd.Process)
+	}
 
 	m.cmd = cmd
 	m.logFile = logFile

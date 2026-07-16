@@ -44,6 +44,11 @@ func PrepareRuntimeConfig(userConfigPath, runtimePath string, dashboardPort int,
 	if _, err := sanitizeOutboundGroups(root); err != nil {
 		return err
 	}
+	// URLTest groups with real nodes → selector so Dashboard shows a pickable
+	// member list (Singapore → node A / node B), not only the group name.
+	convertFilledURLTestToSelector(root)
+	// Also surface nested leaves on parent selectors (Manual first row).
+	exposeNestedLeavesInSelectors(root)
 	applyTunMode(root, tunMode)
 
 	out, err := json.MarshalIndent(root, "", "  ")

@@ -118,6 +118,9 @@ func (c *Controller) onReady() {
 	// Match original SingBoxClient: TemplateIcon + Icon for clear off/on colors.
 	c.applyTrayIcon(false)
 
+	// Clear system proxy left on after crash / kill (otherwise direct sites fail).
+	_ = sysproxy.ClearLeftover()
+
 	// —— 主菜单保持精简 ——
 	c.mStatus = systray.AddMenuItem(i18n.T("status_stopped"), "")
 	c.mStatus.Disable()
@@ -280,8 +283,10 @@ func (c *Controller) loop() {
 		case <-c.mQuit.ClickedCh:
 			go func() {
 				c.shutdown()
+				app.ReleaseSingleInstance()
 				systray.Quit()
-				time.AfterFunc(500*time.Millisecond, func() { os.Exit(0) })
+				// Hard exit after cleanup so no residual tray/process.
+				time.AfterFunc(300*time.Millisecond, func() { os.Exit(0) })
 			}()
 			return
 		case <-c.mConfigs.ClickedCh:
@@ -577,6 +582,9 @@ func (c *Controller) applySystemProxy(on bool) {
 func (c *Controller) shutdown() {
 	_ = c.stopProxy()
 	_ = sysproxy.Restore()
+	_ = sysproxy.ClearLeftover()
+	// Ensure job-tracked children are gone even if Stop raced.
+	core.CloseJob()
 }
 
 // openDashboard opens the official sing-box dashboard in the browser.
@@ -1283,7 +1291,9 @@ func (c *Controller) stopProxy() error {
 	defer c.mu.Unlock()
 	err := c.Core.Stop()
 	c.setStatus(false, "")
+	// Must turn off Windows system proxy, or browsers keep using dead 127.0.0.1:port.
 	_ = sysproxy.Restore()
+	_ = sysproxy.ClearLeftover()
 	return err
 }
 
@@ -1360,4 +1370,5 @@ func (c *Controller) onExit() {
 		_ = c.cfgWatch.Close()
 	}
 	c.shutdown()
+	app.ReleaseSingleInstance()
 }
