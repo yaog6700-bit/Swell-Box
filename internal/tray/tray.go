@@ -618,7 +618,12 @@ func (c *Controller) importSubscription() {
 	}
 	text = strings.TrimSpace(text)
 	notify.Info(paths.AppName, i18n.T("sub_importing"))
-	nodes, err := subscribe.FetchURL(text)
+
+	var (
+		nodes   []sharelink.Node
+		subURL  string // non-empty when fetched from a live subscription URL
+	)
+	nodes, err = subscribe.FetchURL(text)
 	if err != nil {
 		if nodes2, err2 := subscribe.ParseBody(text); err2 == nil {
 			nodes = nodes2
@@ -627,13 +632,22 @@ func (c *Controller) importSubscription() {
 			return
 		}
 	} else {
-		// Save URL for later one-click update
-		if s, err := config.AddSubscription(text); err == nil {
+		subURL = text
+		// Drop previous nodes from this URL before re-import (avoids -2 duplicates).
+		if prev := config.GetSubscription(subURL); prev != nil && len(prev.NodeTags) > 0 {
+			c.suppressConfigWatch(3 * time.Second)
+			_, _ = config.RemoveNodesFromConfig(c.App, prev.NodeTags)
+		}
+		if s, err := config.AddSubscription(subURL); err == nil {
 			notify.Info(paths.AppName, i18n.T("sub_saved")+s.Name)
 			c.refreshSubDeleteMenu()
 		}
 	}
-	c.applyImportedNodes(nodes)
+	tags := c.applyImportedNodes(nodes)
+	if subURL != "" && len(tags) > 0 {
+		_ = config.SetSubscriptionNodeTags(subURL, tags)
+		c.refreshSubDeleteMenu()
+	}
 }
 
 func (c *Controller) updateSavedSubscriptions() {
@@ -643,42 +657,66 @@ func (c *Controller) updateSavedSubscriptions() {
 		return
 	}
 	notify.Info(paths.AppName, i18n.T("sub_importing"))
-	var all []sharelink.Node
+	c.suppressConfigWatch(5 * time.Second)
+
+	total := 0
 	for _, it := range items {
 		nodes, err := subscribe.FetchURL(it.URL)
 		if err != nil {
 			log.Println("sub update", it.URL, err)
 			continue
 		}
-		all = append(all, nodes...)
+		// Replace previous nodes from this subscription.
+		if len(it.NodeTags) > 0 {
+			_, _ = config.RemoveNodesFromConfig(c.App, it.NodeTags)
+		}
+		tags, err := config.AddNodesToActiveConfig(c.App, nodes)
+		if err != nil {
+			log.Println("sub update apply", it.URL, err)
+			continue
+		}
+		_ = config.SetSubscriptionNodeTags(it.URL, tags)
+		total += len(tags)
 	}
-	if len(all) == 0 {
+	if total == 0 {
 		notify.Error(paths.AppName, i18n.T("sub_failed")+"no nodes")
 		return
 	}
-	c.applyImportedNodes(all)
-	notify.Info(paths.AppName, fmt.Sprintf(i18n.T("sub_updated"), len(all)))
+	if c.Core != nil && c.Core.Running() {
+		_ = c.stopProxy()
+		if err := c.startProxy(); err != nil {
+			notify.Error(paths.AppName, fmt.Sprintf(i18n.T("sub_updated"), total)+" — "+err.Error())
+			c.refreshNodeMenu()
+			return
+		}
+	}
+	c.refreshNodeMenu()
+	c.refreshSubDeleteMenu()
+	notify.Info(paths.AppName, fmt.Sprintf(i18n.T("sub_updated"), total))
 }
 
-func (c *Controller) applyImportedNodes(nodes []sharelink.Node) {
+// applyImportedNodes writes nodes into the active config and returns their tags.
+func (c *Controller) applyImportedNodes(nodes []sharelink.Node) []string {
 	c.suppressConfigWatch(3 * time.Second)
 	tags, err := config.AddNodesToActiveConfig(c.App, nodes)
 	if err != nil {
 		notify.Error(paths.AppName, i18n.T("save_failed")+err.Error())
-		return
+		return nil
 	}
 	msg := fmt.Sprintf(i18n.T("sub_ok"), len(tags))
-	if c.Core.Running() {
+	if c.Core != nil && c.Core.Running() {
 		_ = c.stopProxy()
 		if err := c.startProxy(); err != nil {
 			notify.Error(paths.AppName, msg)
-			return
+			c.refreshNodeMenu()
+			return tags
 		}
 		notify.Info(paths.AppName, msg+i18n.T("imported_restart"))
 	} else {
 		notify.Info(paths.AppName, msg+i18n.T("imported_start"))
 	}
 	c.refreshNodeMenu()
+	return tags
 }
 
 func (c *Controller) doUpdateCore(channel string) {

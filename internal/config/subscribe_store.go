@@ -2,6 +2,7 @@ package config
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -11,9 +12,12 @@ import (
 )
 
 // Subscription is a saved subscription source.
+// NodeTags records outbound tags last imported from this URL, so deleting
+// the subscription can also remove those nodes from the active config.
 type Subscription struct {
-	Name string `json:"name"`
-	URL  string `json:"url"`
+	Name     string   `json:"name"`
+	URL      string   `json:"url"`
+	NodeTags []string `json:"node_tags,omitempty"`
 }
 
 type subFile struct {
@@ -61,7 +65,7 @@ func SaveSubscriptions(items []Subscription) error {
 	return os.WriteFile(p, data, 0o644)
 }
 
-// AddSubscription upserts by URL.
+// AddSubscription upserts by URL (keeps existing NodeTags if any).
 func AddSubscription(rawURL string) (Subscription, error) {
 	rawURL = strings.TrimSpace(rawURL)
 	name := "subscription"
@@ -81,17 +85,74 @@ func AddSubscription(rawURL string) (Subscription, error) {
 	return s, SaveSubscriptions(items)
 }
 
-// RemoveSubscription deletes by URL.
-func RemoveSubscription(rawURL string) error {
+// SetSubscriptionNodeTags records which config node tags came from this URL.
+func SetSubscriptionNodeTags(rawURL string, tags []string) error {
+	rawURL = strings.TrimSpace(rawURL)
 	items, err := LoadSubscriptions()
 	if err != nil {
 		return err
 	}
-	var next []Subscription
-	for _, it := range items {
+	for i, it := range items {
 		if it.URL != rawURL {
-			next = append(next, it)
+			continue
+		}
+		// de-dup empty
+		var clean []string
+		seen := map[string]bool{}
+		for _, t := range tags {
+			t = strings.TrimSpace(t)
+			if t == "" || seen[t] {
+				continue
+			}
+			seen[t] = true
+			clean = append(clean, t)
+		}
+		items[i].NodeTags = clean
+		return SaveSubscriptions(items)
+	}
+	return fmt.Errorf("subscription not found")
+}
+
+// RemoveSubscription deletes by URL and returns the removed entry (for node cleanup).
+func RemoveSubscription(rawURL string) (*Subscription, error) {
+	rawURL = strings.TrimSpace(rawURL)
+	items, err := LoadSubscriptions()
+	if err != nil {
+		return nil, err
+	}
+	var (
+		next    []Subscription
+		removed *Subscription
+	)
+	for _, it := range items {
+		if it.URL == rawURL {
+			cp := it
+			removed = &cp
+			continue
+		}
+		next = append(next, it)
+	}
+	if removed == nil {
+		return nil, fmt.Errorf("subscription not found")
+	}
+	if err := SaveSubscriptions(next); err != nil {
+		return nil, err
+	}
+	return removed, nil
+}
+
+// GetSubscription returns the saved entry for rawURL, or nil.
+func GetSubscription(rawURL string) *Subscription {
+	items, err := LoadSubscriptions()
+	if err != nil {
+		return nil
+	}
+	rawURL = strings.TrimSpace(rawURL)
+	for i := range items {
+		if items[i].URL == rawURL {
+			cp := items[i]
+			return &cp
 		}
 	}
-	return SaveSubscriptions(next)
+	return nil
 }

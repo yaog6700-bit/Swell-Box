@@ -1,6 +1,7 @@
 package tray
 
 import (
+	"fmt"
 	"log"
 	"strings"
 	"time"
@@ -262,25 +263,41 @@ func (c *Controller) onSubDelete(idx int) {
 	if rawURL == "" {
 		return
 	}
-	// Resolve display name for toast before removal.
-	name := rawURL
-	if items, err := config.LoadSubscriptions(); err == nil {
-		for _, it := range items {
-			if it.URL == rawURL {
-				if it.Name != "" {
-					name = it.Name
-				}
-				break
-			}
-		}
-	}
-	if err := config.RemoveSubscription(rawURL); err != nil {
+	c.suppressConfigWatch(3 * time.Second)
+
+	removed, err := config.RemoveSubscription(rawURL)
+	if err != nil {
 		notify.Error(paths.AppName, i18n.T("sub_delete_fail")+err.Error())
 		return
 	}
+	name := rawURL
+	if removed != nil && removed.Name != "" {
+		name = removed.Name
+	}
+
+	// Also drop nodes that were imported from this subscription.
+	nodeN := 0
+	if removed != nil && len(removed.NodeTags) > 0 {
+		if n, err := config.RemoveNodesFromConfig(c.App, removed.NodeTags); err == nil {
+			nodeN = n
+		}
+	}
+
 	c.refreshSubDeleteMenu()
-	// Only removes the saved URL. Imported nodes stay until deleted under 节点 → 删除节点.
-	notify.Info(paths.AppName, i18n.T("sub_deleted")+name)
+	c.refreshNodeMenu()
+	if c.Core != nil && c.Core.Running() && nodeN > 0 {
+		_ = c.stopProxy()
+		if err := c.startProxy(); err != nil {
+			notify.Error(paths.AppName, fmt.Sprintf(i18n.T("sub_deleted_nodes"), name, nodeN)+" — "+err.Error())
+			return
+		}
+	}
+	if nodeN > 0 {
+		notify.Info(paths.AppName, fmt.Sprintf(i18n.T("sub_deleted_nodes"), name, nodeN))
+	} else {
+		// Older subs (before tag tracking) have no node_tags — only the URL is removed.
+		notify.Info(paths.AppName, i18n.T("sub_deleted")+name+i18n.T("sub_deleted_no_tags"))
+	}
 }
 
 func (c *Controller) refreshSubDeleteMenu() {

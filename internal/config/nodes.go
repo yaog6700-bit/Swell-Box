@@ -123,34 +123,54 @@ func AddNodesToActiveConfig(settings *AppSettings, nodes []sharelink.Node) (tags
 	return tags, nil
 }
 
-// RemoveNodeFromConfig deletes a leaf outbound by tag from the active config,
-// removes it from all selector member lists, and fixes selector defaults.
-// Built-in tags (direct/block/dns/reject) cannot be removed.
+// RemoveNodeFromConfig deletes a leaf outbound by tag from the active config.
 func RemoveNodeFromConfig(settings *AppSettings, tag string) error {
-	tag = strings.TrimSpace(tag)
-	if tag == "" {
-		return fmt.Errorf("empty tag")
-	}
-	low := strings.ToLower(tag)
-	if low == "direct" || low == "block" || low == "dns" || low == "reject" {
-		return fmt.Errorf("cannot remove built-in outbound %q", tag)
-	}
-	path, err := ActiveConfigPath(settings)
+	n, err := RemoveNodesFromConfig(settings, []string{tag})
 	if err != nil {
 		return err
+	}
+	if n == 0 {
+		return fmt.Errorf("node %q not found", tag)
+	}
+	return nil
+}
+
+// RemoveNodesFromConfig deletes multiple leaf outbounds by tag in one write.
+// Built-in tags (direct/block/dns/reject) are skipped. Returns how many tags
+// were actually removed from outbounds or selector lists.
+func RemoveNodesFromConfig(settings *AppSettings, tags []string) (int, error) {
+	drop := map[string]bool{}
+	for _, tag := range tags {
+		tag = strings.TrimSpace(tag)
+		if tag == "" {
+			continue
+		}
+		low := strings.ToLower(tag)
+		if low == "direct" || low == "block" || low == "dns" || low == "reject" {
+			continue
+		}
+		drop[tag] = true
+	}
+	if len(drop) == 0 {
+		return 0, nil
+	}
+
+	path, err := ActiveConfigPath(settings)
+	if err != nil {
+		return 0, err
 	}
 	raw, err := os.ReadFile(path)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	var root map[string]any
 	if err := json.Unmarshal(raw, &root); err != nil {
-		return fmt.Errorf("parse config: %w", err)
+		return 0, fmt.Errorf("parse config: %w", err)
 	}
 
 	outbounds, _ := root["outbounds"].([]any)
 	var kept []any
-	removed := false
+	removedCount := 0
 	for _, item := range outbounds {
 		m, ok := item.(map[string]any)
 		if !ok {
@@ -158,18 +178,19 @@ func RemoveNodeFromConfig(settings *AppSettings, tag string) error {
 			continue
 		}
 		t, _ := m["type"].(string)
-		// Never drop selectors / groups — only strip the tag from their lists.
+		// Never drop selectors / groups — only strip tags from their lists.
 		if t == "selector" || t == "urltest" {
 			if list := toStringSlice(m["outbounds"]); len(list) > 0 {
 				var next []string
 				for _, o := range list {
-					if o != tag {
-						next = append(next, o)
+					if drop[o] {
+						removedCount++
+						continue
 					}
+					next = append(next, o)
 				}
 				m["outbounds"] = toAnySlice(next)
-				if def, _ := m["default"].(string); def == tag {
-					// Pick first remaining non-empty member, prefer non-direct.
+				if def, _ := m["default"].(string); drop[def] {
 					newDef := ""
 					for _, o := range next {
 						if o != "" && strings.ToLower(o) != "direct" {
@@ -190,42 +211,21 @@ func RemoveNodeFromConfig(settings *AppSettings, tag string) error {
 			kept = append(kept, m)
 			continue
 		}
-		if name, _ := m["tag"].(string); name == tag {
-			removed = true
+		if name, _ := m["tag"].(string); drop[name] {
+			removedCount++
 			continue
 		}
 		kept = append(kept, item)
 	}
-	if !removed {
-		// Still OK if it was only a dangling selector reference.
-		// But report if nothing referenced it either.
-		foundInSelector := false
-		for _, item := range outbounds {
-			m, ok := item.(map[string]any)
-			if !ok {
-				continue
-			}
-			t, _ := m["type"].(string)
-			if t != "selector" && t != "urltest" {
-				continue
-			}
-			for _, o := range toStringSlice(m["outbounds"]) {
-				if o == tag {
-					foundInSelector = true
-					break
-				}
-			}
-		}
-		if !foundInSelector {
-			return fmt.Errorf("node %q not found", tag)
-		}
-	}
 	root["outbounds"] = kept
 	out, err := json.MarshalIndent(root, "", "  ")
 	if err != nil {
-		return err
+		return 0, err
 	}
-	return os.WriteFile(path, out, 0o644)
+	if err := os.WriteFile(path, out, 0o644); err != nil {
+		return 0, err
+	}
+	return removedCount, nil
 }
 
 func uniqueTag(base string, existing map[string]int) string {
