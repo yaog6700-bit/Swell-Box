@@ -73,8 +73,11 @@ type Controller struct {
 	mLangEN        *systray.MenuItem
 	mAbout         *systray.MenuItem
 	mQuit          *systray.MenuItem
-	configItems    []*systray.MenuItem
+
+	// Dynamic config file slots under 配置文件
+	configSlots    []*systray.MenuItem
 	configNames    []string
+	mConfigsEmpty  *systray.MenuItem
 
 	// Dynamic node slots (switch + delete)
 	nodeSlots      []*systray.MenuItem
@@ -137,9 +140,10 @@ func (c *Controller) onReady() {
 	c.mImport = c.mAdd.AddSubMenuItem(i18n.T("import_clipboard"), "")
 	c.mImportConfig = c.mAdd.AddSubMenuItem(i18n.T("import_config"), "")
 
-	// 配置文件 ▸ 多配置切换
+	// 配置文件 ▸ 多配置切换（预分配槽位，导入后可实时刷新）
 	c.mConfigs = systray.AddMenuItem(i18n.T("configs"), "")
-	c.rebuildConfigMenu(c.mConfigs)
+	c.initConfigSlots()
+	c.refreshConfigMenu()
 
 	// 设置 ▸ 自启 / 代理 / 语言
 	c.mSettings = systray.AddMenuItem(i18n.T("menu_settings"), "")
@@ -285,6 +289,7 @@ func (c *Controller) loop() {
 			}()
 			return
 		case <-c.mConfigs.ClickedCh:
+			c.refreshConfigMenu()
 		case <-c.mUpdate.ClickedCh:
 		case <-c.mLang.ClickedCh:
 		case <-c.mAdd.ClickedCh:
@@ -590,14 +595,19 @@ func (c *Controller) importConfigFile() {
 		return
 	}
 	c.suppressConfigWatch(3 * time.Second)
-	name, err := config.ImportConfigFile(c.App, path)
+	res, err := config.ImportConfigFile(c.App, path)
 	if err != nil {
 		notify.Error(paths.AppName, i18n.T("cfg_import_fail")+err.Error())
 		return
 	}
 	c.rewatchActiveConfig()
+	c.refreshConfigMenu() // show newly imported file without restarting the app
 	c.refreshNodeMenu()
-	msg := fmt.Sprintf(i18n.T("cfg_import_ok"), name)
+	msg := fmt.Sprintf(i18n.T("cfg_import_ok"), res.Name)
+	if len(res.Warnings) > 0 {
+		// e.g. empty urltest groups auto-filled with direct/first proxy
+		msg += " — " + fmt.Sprintf(i18n.T("cfg_import_fixed"), len(res.Warnings))
+	}
 	if c.Core.Running() {
 		_ = c.stopProxy()
 		if err := c.startProxy(); err != nil {
@@ -932,31 +942,102 @@ func (c *Controller) importFromClipboard() {
 	c.refreshNodeMenu()
 }
 
-func (c *Controller) rebuildConfigMenu(parent *systray.MenuItem) {
-	names, err := config.ListConfigFiles()
-	if err != nil || len(names) == 0 {
-		item := parent.AddSubMenuItem(i18n.T("no_config"), "")
-		item.Disable()
+const maxConfigSlots = 24
+
+func (c *Controller) initConfigSlots() {
+	c.configSlots = make([]*systray.MenuItem, maxConfigSlots)
+	c.configNames = make([]string, maxConfigSlots)
+	for i := 0; i < maxConfigSlots; i++ {
+		mi := c.mConfigs.AddSubMenuItemCheckbox("—", "", false)
+		mi.Hide()
+		c.configSlots[i] = mi
+		idx := i
+		go func() {
+			for range mi.ClickedCh {
+				c.onConfigClick(idx)
+			}
+		}()
+	}
+	c.mConfigsEmpty = c.mConfigs.AddSubMenuItem(i18n.T("no_config"), "")
+	c.mConfigsEmpty.Disable()
+}
+
+func (c *Controller) onConfigClick(idx int) {
+	if idx < 0 || idx >= len(c.configNames) {
 		return
 	}
-	c.configNames = names
-	c.configItems = nil
-	for _, name := range names {
-		n := name
-		item := parent.AddSubMenuItemCheckbox(n, n, n == c.App.ActiveConfig)
-		c.configItems = append(c.configItems, item)
-		go func(name string, mi *systray.MenuItem) {
-			for range mi.ClickedCh {
-				c.selectConfig(name)
-				for i, other := range c.configItems {
-					if c.configNames[i] == name {
-						other.Check()
-					} else {
-						other.Uncheck()
-					}
-				}
+	name := c.configNames[idx]
+	if name == "" {
+		return
+	}
+	c.selectConfig(name)
+	// Update checkmarks immediately.
+	active := ""
+	if c.App != nil {
+		active = c.App.ActiveConfig
+	}
+	for i, mi := range c.configSlots {
+		if mi == nil || c.configNames[i] == "" {
+			continue
+		}
+		if c.configNames[i] == active {
+			mi.Check()
+		} else {
+			mi.Uncheck()
+		}
+	}
+}
+
+// refreshConfigMenu reloads the 配置文件 submenu from disk (import / switch / open).
+func (c *Controller) refreshConfigMenu() {
+	if c.mConfigs == nil || c.configSlots == nil {
+		return
+	}
+	names, err := config.ListConfigFiles()
+	if err != nil {
+		names = nil
+	}
+	active := ""
+	if c.App != nil {
+		active = c.App.ActiveConfig
+	}
+
+	if len(names) == 0 {
+		if c.mConfigsEmpty != nil {
+			c.mConfigsEmpty.SetTitle(i18n.T("no_config"))
+			c.mConfigsEmpty.Show()
+		}
+		for i, mi := range c.configSlots {
+			c.configNames[i] = ""
+			if mi != nil {
+				mi.Hide()
 			}
-		}(n, item)
+		}
+		return
+	}
+	if c.mConfigsEmpty != nil {
+		c.mConfigsEmpty.Hide()
+	}
+
+	for i := 0; i < maxConfigSlots; i++ {
+		mi := c.configSlots[i]
+		if mi == nil {
+			continue
+		}
+		if i >= len(names) {
+			c.configNames[i] = ""
+			mi.Hide()
+			continue
+		}
+		name := names[i]
+		c.configNames[i] = name
+		mi.SetTitle(name)
+		mi.Show()
+		if name == active {
+			mi.Check()
+		} else {
+			mi.Uncheck()
+		}
 	}
 }
 
@@ -970,6 +1051,7 @@ func (c *Controller) selectConfig(name string) {
 	c.App.ActiveConfig = name
 	_ = config.SaveAppSettings(c.App)
 	c.rewatchActiveConfig()
+	c.refreshConfigMenu()
 	c.refreshNodeMenu()
 	if c.Core.Running() {
 		c.suppressConfigWatch(2 * time.Second)
