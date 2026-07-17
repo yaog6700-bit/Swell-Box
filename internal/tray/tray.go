@@ -564,8 +564,9 @@ func (c *Controller) proxyAddr() string {
 	return "127.0.0.1:7890"
 }
 
-// preferredCorePath returns the absolute core binary Start() must use.
-// Priority: existing ~/.swellbox/bin core → app.json core_path → empty (auto).
+// preferredCorePath is always the data-dir core when present.
+// Callers should run InstallBundledCore first so a full.zip can seed bin/.
+// app.json core_path is only used when data-dir is empty (advanced override).
 func preferredCorePath(settings *config.AppSettings) string {
 	name := paths.CoreBinaryName()
 	if binDir, err := paths.BinDir(); err == nil {

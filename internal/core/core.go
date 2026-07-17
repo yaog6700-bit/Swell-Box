@@ -43,26 +43,25 @@ func (m *Manager) Running() bool {
 	return m.running
 }
 
-// ResolveBinary finds the sing-box executable.
-// Order must match update.resolveCoreBin so "check core update" and the
-// running process use the same file:
+// ResolveBinary finds the sing-box executable that will actually run.
 //
-//	explicit CorePath → ~/.swellbox/bin (in-app updates) → next to app → PATH
+// Single source of truth: ~/.swellbox/bin (Windows: %USERPROFILE%\.swellbox\bin).
+// The copy next to Swell-Box.exe in a full.zip is only a first-run seed —
+// InstallBundledCore / EnsureCore copy it into the data dir; it is never used
+// as a second runtime path (that caused "update said latest, Dashboard old").
 //
-// Previously "next to app" was preferred, so a successful tray update wrote
-// a new binary under ~/.swellbox/bin while Start() kept launching the older
-// copy shipped next to Swell-Box.exe — Dashboard still showed the old version.
+// Order: explicit CorePath (if set and valid) → data-dir bin → PATH (dev only).
 func (m *Manager) ResolveBinary() (string, error) {
 	name := paths.CoreBinaryName()
 
 	if m.CorePath != "" {
-		if st, err := os.Stat(m.CorePath); err == nil && !st.IsDir() {
+		if st, err := os.Stat(m.CorePath); err == nil && !st.IsDir() && st.Size() > 0 {
 			return m.CorePath, nil
 		}
 		return "", fmt.Errorf("core_path not found: %s", m.CorePath)
 	}
 
-	// 1) User data bin — destination of "Update Core" / EnsureCore installs.
+	// Canonical install location for tray updates and first-run seed.
 	if binDir, err := paths.BinDir(); err == nil {
 		candidate := filepath.Join(binDir, name)
 		if st, err := os.Stat(candidate); err == nil && !st.IsDir() && st.Size() > 0 {
@@ -70,30 +69,10 @@ func (m *Manager) ResolveBinary() (string, error) {
 		}
 	}
 
-	// 2) Next to the Swell-Box executable (incl. macOS .app layouts / full.zip).
-	if exePath, err := os.Executable(); err == nil {
-		if r, err := filepath.EvalSymlinks(exePath); err == nil {
-			exePath = r
-		}
-		dir := filepath.Dir(exePath)
-		for _, candidate := range []string{
-			filepath.Join(dir, name),
-			filepath.Join(dir, "bin", name),
-			filepath.Join(dir, "core", name),
-			filepath.Clean(filepath.Join(dir, "..", "Resources", name)),
-			filepath.Clean(filepath.Join(dir, "..", "..", "..", name)),
-		} {
-			if st, err := os.Stat(candidate); err == nil && !st.IsDir() && st.Size() > 0 {
-				return candidate, nil
-			}
-		}
-	}
-
-	// 3) PATH
+	// Dev / manual: PATH only (not the zip-side binary).
 	if p, err := exec.LookPath(name); err == nil {
 		return p, nil
 	}
-	// Also try without .exe on Windows PATH quirks
 	if runtime.GOOS == "windows" {
 		if p, err := exec.LookPath("sing-box"); err == nil {
 			return p, nil
@@ -101,8 +80,9 @@ func (m *Manager) ResolveBinary() (string, error) {
 	}
 
 	return "", fmt.Errorf(
-		"sing-box binary not found\n"+
-			"Put %s next to Swell-Box, or in ~/.swellbox/bin (Windows: %%USERPROFILE%%\\.swellbox\\bin), or on PATH",
+		"sing-box binary not found in ~/.swellbox/bin\n"+
+			"Place %s next to Swell-Box once (offline package seeds the data dir), "+
+			"or use tray → Update Core, or set SWELLBOX_CORE",
 		name,
 	)
 }

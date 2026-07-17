@@ -8,55 +8,38 @@ import (
 	"github.com/swell-app/swellbox/internal/paths"
 )
 
-// CorePresent reports whether a sing-box binary is already available.
+// CorePresent reports whether the runtime core exists in ~/.swellbox/bin.
+// The zip-side binary alone does not count — it must be seeded into the data dir.
 func CorePresent() bool {
 	name := paths.CoreBinaryName()
 	if binDir, err := paths.BinDir(); err == nil {
-		if st, err := os.Stat(filepath.Join(binDir, name)); err == nil && !st.IsDir() {
+		if st, err := os.Stat(filepath.Join(binDir, name)); err == nil && !st.IsDir() && st.Size() > 0 {
 			return true
-		}
-	}
-	if exe, err := os.Executable(); err == nil {
-		dir := filepath.Dir(exe)
-		for _, p := range []string{
-			filepath.Join(dir, name),
-			filepath.Join(dir, "bin", name),
-		} {
-			if st, err := os.Stat(p); err == nil && !st.IsDir() {
-				return true
-			}
 		}
 	}
 	return false
 }
 
-// EnsureCore makes sure a core binary is available:
-//  1. already in ~/.swellbox/bin or next to exe
-//  2. copy from package (next to Swell-Box.exe) into data dir
-//  3. download from GitHub (needs network)
+// EnsureCore makes sure ~/.swellbox/bin has a sing-box binary:
+//  1. already in data dir
+//  2. seed-copy from full.zip (next to Swell-Box.exe) into data dir
+//  3. download from GitHub into data dir
 //
 // channel: stable or pre (used only for online download).
 func EnsureCore(channel string, onProgress func(string)) (string, error) {
-	// Prefer data-dir install for long-term use.
-	if binDir, err := paths.BinDir(); err == nil {
-		p := filepath.Join(binDir, paths.CoreBinaryName())
-		if st, err := os.Stat(p); err == nil && !st.IsDir() && st.Size() > 0 {
-			return installedCoreVersion(), nil
-		}
+	if CorePresent() {
+		return installedCoreVersion(), nil
 	}
 
-	// Install from release package sitting next to this app (offline-friendly).
+	// Seed from offline package next to this app (does not run from that path).
 	if onProgress != nil {
 		onProgress("bundle")
 	}
-	if ok, err := InstallBundledCore(); err == nil && ok {
-		return installedCoreVersion(), nil
-	} else if CorePresent() {
-		// May still be next to exe without copy
+	if ok, err := InstallBundledCore(); err == nil && ok && CorePresent() {
 		return installedCoreVersion(), nil
 	}
 
-	// Online download fallback
+	// Online download into data dir
 	if onProgress != nil {
 		onProgress("downloading")
 	}
@@ -78,14 +61,13 @@ func EnsureCore(channel string, onProgress func(string)) (string, error) {
 
 // EnsureCoreOrError is a one-liner for callers.
 func EnsureCoreOrError(channel string) error {
+	_, _ = InstallBundledCore()
 	if CorePresent() {
-		// still try bundle install into data dir if only next-to-exe
-		_, _ = InstallBundledCore()
 		return nil
 	}
 	_, err := EnsureCore(channel, nil)
 	if err != nil {
-		return fmt.Errorf("core missing: place sing-box.exe next to Swell-Box.exe, or connect network for auto-download: %w", err)
+		return fmt.Errorf("core missing: place sing-box next to Swell-Box (seeds data dir), or connect network: %w", err)
 	}
 	return nil
 }

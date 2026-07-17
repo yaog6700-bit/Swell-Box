@@ -133,7 +133,8 @@ func installedCoreVersion() string {
 	return strings.TrimSpace(out)
 }
 
-// resolveCoreBin order MUST match core.Manager.ResolveBinary (without CorePath override).
+// resolveCoreBin matches core.Manager.ResolveBinary without CorePath:
+// data-dir only (zip-side binary is seed, not a second runtime).
 func resolveCoreBin() (string, error) {
 	name := paths.CoreBinaryName()
 	if binDir, err := paths.BinDir(); err == nil {
@@ -142,24 +143,7 @@ func resolveCoreBin() (string, error) {
 			return p, nil
 		}
 	}
-	if exe, err := os.Executable(); err == nil {
-		if r, err := filepath.EvalSymlinks(exe); err == nil {
-			exe = r
-		}
-		dir := filepath.Dir(exe)
-		for _, p := range []string{
-			filepath.Join(dir, name),
-			filepath.Join(dir, "bin", name),
-			filepath.Join(dir, "core", name),
-			filepath.Clean(filepath.Join(dir, "..", "Resources", name)),
-			filepath.Clean(filepath.Join(dir, "..", "..", "..", name)),
-		} {
-			if st, err := os.Stat(p); err == nil && !st.IsDir() && st.Size() > 0 {
-				return p, nil
-			}
-		}
-	}
-	return "", fmt.Errorf("core binary not found")
+	return "", fmt.Errorf("core binary not found in data dir")
 }
 
 // UpdateCore downloads sing-box for the given channel and installs into ~/.swellbox/bin.

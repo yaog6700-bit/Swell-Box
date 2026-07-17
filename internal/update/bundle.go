@@ -9,9 +9,11 @@ import (
 	"github.com/swell-app/swellbox/internal/paths"
 )
 
-// InstallBundledCore copies sing-box (and sidecars like libcronet.dll) from
-// next to the Swell-Box executable into ~/.swellbox/bin when the data-dir
-// core is missing.
+// InstallBundledCore seeds ~/.swellbox/bin from the offline full.zip layout
+// (sing-box next to Swell-Box.exe) when the data-dir core is missing.
+//
+// The zip-side binary is NOT used at runtime after this copy — Start() and
+// "Update Core" only use ~/.swellbox/bin. That keeps one kernel path.
 //
 // Layout supported next to Swell-Box.exe:
 //
