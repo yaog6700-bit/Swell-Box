@@ -31,9 +31,9 @@ static void swellbox_notify(const char *title, const char *body) {
 		UNUserNotificationCenter *center = [UNUserNotificationCenter currentNotificationCenter];
 		[center getNotificationSettingsWithCompletionHandler:^(UNNotificationSettings *settings) {
 			UNAuthorizationStatus st = settings.authorizationStatus;
+			// Ephemeral is iOS-only; macOS has Authorized + Provisional.
 			if (st == UNAuthorizationStatusAuthorized ||
-			    st == UNAuthorizationStatusProvisional ||
-			    st == UNAuthorizationStatusEphemeral) {
+			    st == UNAuthorizationStatusProvisional) {
 				swellbox_deliver(t, b);
 				return;
 			}
