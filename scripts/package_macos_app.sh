@@ -8,10 +8,12 @@ OUT_APP="${2:?output .app path}"
 VERSION="${3:-0.0.0}"
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-# App icon: same black pickaxe as Windows process icon (not the color brand logo).
-PNG="${ROOT}/internal/seed/icon.png"
+# App bundle icon: use the full-colour squircle logo (logo.png) on macOS.
+# icon.png is the monochrome template used for the menu-bar tray icon only;
+# its white background looks grey/wrong as a Finder / notification icon.
+PNG="${ROOT}/internal/seed/logo.png"
 if [[ ! -f "$PNG" ]]; then
-  PNG="${ROOT}/internal/seed/logo.png"
+  PNG="${ROOT}/internal/seed/icon.png"
 fi
 if [[ ! -f "$BIN" ]]; then
   echo "binary not found: $BIN" >&2
