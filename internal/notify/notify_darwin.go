@@ -8,58 +8,45 @@ package notify
 
 #include <stdlib.h>
 #import <Foundation/Foundation.h>
-#import <UserNotifications/UserNotifications.h>
 
-// Deliver a local notification from this process so macOS uses Swell-Box.app's
-// CFBundleIcon (pickaxe). beeep/osascript always shows Script Editor instead.
+@interface SwellNotificationDelegate : NSObject <NSUserNotificationCenterDelegate>
+@end
+
+@implementation SwellNotificationDelegate
+- (BOOL)userNotificationCenter:(NSUserNotificationCenter *)center shouldPresentNotification:(NSUserNotification *)notification {
+    return YES;
+}
+@end
+
+static SwellNotificationDelegate *swellDelegate = nil;
+
 static void swellbox_deliver(NSString *title, NSString *body) {
-	UNUserNotificationCenter *center = [UNUserNotificationCenter currentNotificationCenter];
-	UNMutableNotificationContent *content = [UNMutableNotificationContent new];
-	content.title = title ?: @"";
-	content.body = body ?: @"";
-	NSString *ident = [[NSUUID UUID] UUIDString];
-	UNNotificationRequest *req =
-	    [UNNotificationRequest requestWithIdentifier:ident content:content trigger:nil];
-	[center addNotificationRequest:req withCompletionHandler:^(__unused NSError *error){
-	}];
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+	NSUserNotification *notif = [[NSUserNotification alloc] init];
+	notif.title = title ?: @"";
+	notif.informativeText = body ?: @"";
+	[[NSUserNotificationCenter defaultUserNotificationCenter] deliverNotification:notif];
+#pragma clang diagnostic pop
 }
 
 static void swellbox_notify(const char *title, const char *body) {
 	@autoreleasepool {
 		NSString *t = title ? [NSString stringWithUTF8String:title] : @"";
 		NSString *b = body ? [NSString stringWithUTF8String:body] : @"";
-		UNUserNotificationCenter *center = [UNUserNotificationCenter currentNotificationCenter];
-		[center getNotificationSettingsWithCompletionHandler:^(UNNotificationSettings *settings) {
-			UNAuthorizationStatus st = settings.authorizationStatus;
-			// Ephemeral is iOS-only; macOS has Authorized + Provisional.
-			if (st == UNAuthorizationStatusAuthorized ||
-			    st == UNAuthorizationStatusProvisional) {
-				swellbox_deliver(t, b);
-				return;
-			}
-			if (st == UNAuthorizationStatusNotDetermined) {
-				UNAuthorizationOptions opts =
-				    UNAuthorizationOptionAlert | UNAuthorizationOptionSound | UNAuthorizationOptionBadge;
-				[center requestAuthorizationWithOptions:opts
-				                      completionHandler:^(BOOL granted, __unused NSError *error) {
-					if (granted) {
-						swellbox_deliver(t, b);
-					}
-				}];
-			}
-			// Denied / restricted: no toast (tray still works).
-		}];
+		swellbox_deliver(t, b);
 	}
 }
 
 static void swellbox_request_notify_auth(void) {
 	@autoreleasepool {
-		UNUserNotificationCenter *center = [UNUserNotificationCenter currentNotificationCenter];
-		UNAuthorizationOptions opts =
-		    UNAuthorizationOptionAlert | UNAuthorizationOptionSound | UNAuthorizationOptionBadge;
-		[center requestAuthorizationWithOptions:opts
-		                      completionHandler:^(__unused BOOL granted, __unused NSError *error){
-		}];
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+		if (!swellDelegate) {
+			swellDelegate = [[SwellNotificationDelegate alloc] init];
+			[NSUserNotificationCenter defaultUserNotificationCenter].delegate = swellDelegate;
+		}
+#pragma clang diagnostic pop
 	}
 }
 */
