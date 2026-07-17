@@ -417,14 +417,13 @@ func httpGet(url string) ([]byte, error) {
 	return body, nil
 }
 
-// newHTTPClient builds a client that respects HTTP(S)_PROXY and separates
-// connect/header timeouts from body transfer. overall is the total request
-// deadline (0 = no overall limit; only transport-level timeouts apply).
+// newHTTPClient prefers the local mixed proxy (127.0.0.1:7890) when the core
+// is running, then HTTP(S)_PROXY env. overall is the total request deadline.
 func newHTTPClient(overall time.Duration) *http.Client {
 	return &http.Client{
 		Timeout: overall,
 		Transport: &http.Transport{
-			Proxy: http.ProxyFromEnvironment,
+			Proxy: downloadProxy,
 			DialContext: (&net.Dialer{
 				Timeout:   30 * time.Second,
 				KeepAlive: 30 * time.Second,
@@ -485,8 +484,9 @@ func downloadURLCandidates(url string) []string {
 }
 
 func downloadFileOnce(url, dest string) error {
-	// 30 minutes covers ~20–40MB assets on very slow links without failing mid-body.
-	client := newHTTPClient(30 * time.Minute)
+	// 10 minutes per URL/attempt; with local proxy this is plenty, and avoids
+	// "stuck downloading forever" when system-proxy mode was still going direct.
+	client := newHTTPClient(10 * time.Minute)
 	req, err := http.NewRequest(http.MethodGet, url, nil)
 	if err != nil {
 		return err

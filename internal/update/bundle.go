@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/swell-app/swellbox/internal/paths"
 )
@@ -12,8 +13,8 @@ import (
 // InstallBundledCore seeds ~/.swellbox/bin from the offline full.zip layout
 // (sing-box next to Swell-Box.exe) when the data-dir core is missing.
 //
-// The zip-side binary is NOT used at runtime after this copy — Start() and
-// "Update Core" only use ~/.swellbox/bin. That keeps one kernel path.
+// After a successful seed (or if data-dir already has a core), the zip-side
+// seed files are removed — runtime only uses ~/.swellbox/bin.
 //
 // Layout supported next to Swell-Box.exe:
 //
@@ -28,7 +29,9 @@ func InstallBundledCore() (bool, error) {
 	}
 	dest := filepath.Join(binDir, name)
 	if st, err := os.Stat(dest); err == nil && !st.IsDir() && st.Size() > 0 {
-		return false, nil // already installed
+		// Data dir already ready — drop leftover seed next to the app.
+		removeBundledSeed()
+		return false, nil
 	}
 
 	src, err := findBundledCore()
@@ -42,8 +45,61 @@ func InstallBundledCore() (bool, error) {
 		return false, err
 	}
 	// copy dlls from same directory as source
-	_ = copySidecars(filepath.Dir(src), binDir)
+	srcDir := filepath.Dir(src)
+	_ = copySidecars(srcDir, binDir)
+
+	// Verify dest then remove seed so users do not keep two kernels.
+	if st, err := os.Stat(dest); err == nil && !st.IsDir() && st.Size() > 1024 {
+		removeSeedAt(src)
+	}
 	return true, nil
+}
+
+// removeBundledSeed deletes the zip-side sing-box (+ sidecars) when present.
+func removeBundledSeed() {
+	src, err := findBundledCore()
+	if err != nil {
+		return
+	}
+	removeSeedAt(src)
+}
+
+func removeSeedAt(src string) {
+	if src == "" {
+		return
+	}
+	// Never delete the data-dir binary.
+	if binDir, err := paths.BinDir(); err == nil {
+		dest := filepath.Join(binDir, paths.CoreBinaryName())
+		if sameFilePath(src, dest) {
+			return
+		}
+	}
+	srcDir := filepath.Dir(src)
+	_ = os.Remove(src)
+	// Sidecar DLLs that ship with windows full packages.
+	entries, err := os.ReadDir(srcDir)
+	if err != nil {
+		return
+	}
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		n := strings.ToLower(e.Name())
+		if strings.HasSuffix(n, ".dll") && (strings.Contains(n, "cronet") || strings.Contains(n, "sing")) {
+			_ = os.Remove(filepath.Join(srcDir, e.Name()))
+		}
+	}
+}
+
+func sameFilePath(a, b string) bool {
+	aa, err1 := filepath.Abs(a)
+	bb, err2 := filepath.Abs(b)
+	if err1 != nil || err2 != nil {
+		return filepath.Clean(a) == filepath.Clean(b)
+	}
+	return strings.EqualFold(aa, bb)
 }
 
 func findBundledCore() (string, error) {
