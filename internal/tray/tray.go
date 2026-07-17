@@ -74,6 +74,10 @@ type Controller struct {
 	mAbout         *systray.MenuItem
 	mQuit          *systray.MenuItem
 
+	// App update badge (GitHub newer release available).
+	appHasUpdate bool
+	appLatestVer string
+
 	// Dynamic config file slots under 配置文件
 	configSlots     []*systray.MenuItem
 	configNames     []string
@@ -176,8 +180,8 @@ func (c *Controller) onReady() {
 	c.mUpdateGeo = c.mUpdate.AddSubMenuItem(i18n.T("update_geo"), "")
 	c.mUpdateApp = c.mUpdate.AddSubMenuItem(i18n.T("update_app"), "")
 
-	// 关于（标题带版本号，方便确认当前构建）
-	c.mAbout = c.mSettings.AddSubMenuItem(aboutMenuTitle(), "")
+	// 关于（标题带版本号；有 GitHub 新版本时追加 ● NEW）
+	c.mAbout = c.mSettings.AddSubMenuItem(c.aboutMenuTitle(), "")
 
 	systray.AddSeparator()
 	c.mQuit = systray.AddMenuItem(i18n.T("quit"), "")
@@ -191,6 +195,9 @@ func (c *Controller) onReady() {
 
 	// One-app experience: auto-fetch core on first run if missing.
 	go c.ensureCoreAsync()
+
+	// Silent GitHub check → ● NEW on About / Settings when a newer app exists.
+	go c.watchAppUpdate()
 
 	// Watch active config for save → auto reload
 	c.startConfigWatch()
@@ -280,8 +287,15 @@ func (c *Controller) loop() {
 		case <-c.mLangEN.ClickedCh:
 			c.switchLang(i18n.EN)
 		case <-c.mAbout.ClickedCh:
-			// Show version in a toast, then open project homepage (not the sing-box core repo).
-			notify.Info(paths.AppName, i18n.TF("about_ver", update.AppVersion))
+			// Show version (and latest if badge is on), then open project homepage.
+			c.mu.Lock()
+			hasUp, latest := c.appHasUpdate, c.appLatestVer
+			c.mu.Unlock()
+			if hasUp && latest != "" {
+				notify.Info(paths.AppName, i18n.TF("about_ver_update", update.AppVersion, latest))
+			} else {
+				notify.Info(paths.AppName, i18n.TF("about_ver", update.AppVersion))
+			}
 			aboutURL := "https://github.com/yaog6700-bit/Swell-Box"
 			if update.AppReleaseRepo != "" {
 				aboutURL = "https://github.com/" + update.AppReleaseRepo
@@ -818,9 +832,92 @@ func (c *Controller) applyImportedNodes(nodes []sharelink.Node) []string {
 	return tags
 }
 
-// aboutMenuTitle is "关于 Swell-Box  v0.2.33" / "About Swell-Box  v0.2.33".
-func aboutMenuTitle() string {
-	return i18n.TF("about", paths.AppName, update.AppVersion)
+// aboutMenuTitle is "关于 Swell-Box  v0.2.34" and may append "● NEW 0.2.35".
+func (c *Controller) aboutMenuTitle() string {
+	base := i18n.TF("about", paths.AppName, update.AppVersion)
+	c.mu.Lock()
+	has, latest := c.appHasUpdate, c.appLatestVer
+	c.mu.Unlock()
+	if !has {
+		return base
+	}
+	if latest != "" {
+		return base + "  " + i18n.TF("about_badge", latest)
+	}
+	return base + "  " + i18n.T("about_badge_plain")
+}
+
+// setAppUpdateAvailable toggles the ● NEW badge on About / Settings / Check for Updates.
+func (c *Controller) setAppUpdateAvailable(has bool, latest string) {
+	c.mu.Lock()
+	c.appHasUpdate = has
+	c.appLatestVer = latest
+	c.mu.Unlock()
+	c.refreshUpdateBadges()
+}
+
+func (c *Controller) refreshUpdateBadges() {
+	if c.mAbout != nil {
+		c.mAbout.SetTitle(c.aboutMenuTitle())
+	}
+	// Parent items so the hint is visible without opening every submenu.
+	if c.mSettings != nil {
+		if c.appUpdateFlag() {
+			c.mSettings.SetTitle(i18n.T("menu_settings") + "  ●")
+		} else {
+			c.mSettings.SetTitle(i18n.T("menu_settings"))
+		}
+	}
+	if c.mUpdate != nil {
+		if c.appUpdateFlag() {
+			c.mUpdate.SetTitle(i18n.T("update") + "  ●")
+		} else {
+			c.mUpdate.SetTitle(i18n.T("update"))
+		}
+	}
+	if c.mUpdateApp != nil {
+		if c.appUpdateFlag() {
+			c.mUpdateApp.SetTitle(i18n.T("update_app") + "  ● NEW")
+		} else {
+			c.mUpdateApp.SetTitle(i18n.T("update_app"))
+		}
+	}
+}
+
+func (c *Controller) appUpdateFlag() bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.appHasUpdate
+}
+
+// watchAppUpdate silently polls GitHub for a newer app release.
+func (c *Controller) watchAppUpdate() {
+	// Wait so first-run core/proxy can come up and help reach GitHub.
+	time.Sleep(12 * time.Second)
+	c.silentCheckAppUpdate()
+	t := time.NewTicker(6 * time.Hour)
+	defer t.Stop()
+	for range t.C {
+		c.silentCheckAppUpdate()
+	}
+}
+
+func (c *Controller) silentCheckAppUpdate() {
+	if update.AppReleaseRepo == "" {
+		return
+	}
+	res := update.CheckApp()
+	if res == nil {
+		return
+	}
+	if res.HasUpdate {
+		c.setAppUpdateAvailable(true, res.Latest)
+		return
+	}
+	// Clear badge only on a definitive "no update" (not on network blips).
+	if res.Message == "" || res.Latest != "" {
+		c.setAppUpdateAvailable(false, "")
+	}
 }
 
 func (c *Controller) doUpdateCore(channel string) {
@@ -877,11 +974,12 @@ func (c *Controller) doCheckApp() {
 		return
 	}
 	if res.Message != "" && !res.HasUpdate {
-		// network / API error
+		// network / API error — keep previous badge
 		notify.Error(paths.AppName, i18n.T("upd_app_fail")+res.Message)
 		return
 	}
 	if !res.HasUpdate {
+		c.setAppUpdateAvailable(false, "")
 		if res.Latest != "" {
 			notify.Info(paths.AppName, fmt.Sprintf(i18n.T("upd_app_latest"), res.Current))
 			return
@@ -890,7 +988,9 @@ func (c *Controller) doCheckApp() {
 		return
 	}
 
-	// Has update
+	// Has update — show ● NEW even if user dismisses the download path.
+	c.setAppUpdateAvailable(true, res.Latest)
+
 	if res.DownloadURL == "" {
 		notify.Info(paths.AppName, fmt.Sprintf(i18n.T("upd_app_open_page"), res.Latest))
 		_ = app.OpenURL("https://github.com/" + update.AppReleaseRepo + "/releases")
@@ -975,7 +1075,6 @@ func (c *Controller) applyMenuLanguage() {
 	c.refreshSubDeleteMenu()
 	set(c.mConfigs, "configs")
 	set(c.mDeleteConfigs, "menu_delete_config")
-	set(c.mSettings, "menu_settings")
 	set(c.mAutostart, "autostart")
 	set(c.mAutoProxy, "auto_proxy")
 	set(c.mSysProxy, "system_proxy")
@@ -983,17 +1082,14 @@ func (c *Controller) applyMenuLanguage() {
 	set(c.mLang, "language")
 	set(c.mLangZH, "lang_zh")
 	set(c.mLangEN, "lang_en")
-	set(c.mUpdate, "update")
 	set(c.mUpdateCore, "update_core_stable")
 	set(c.mUpdateCorePre, "update_core_pre")
 	set(c.mUpdateGeo, "update_geo")
-	set(c.mUpdateApp, "update_app")
 	set(c.mTools, "menu_tools")
 	set(c.mOpenDir, "open_data")
 	set(c.mOpenLog, "open_log")
-	if c.mAbout != nil {
-		c.mAbout.SetTitle(aboutMenuTitle())
-	}
+	// Settings / Update / About titles include optional ● NEW badge.
+	c.refreshUpdateBadges()
 	set(c.mQuit, "quit")
 	if running {
 		systray.SetTooltip(i18n.TName("tooltip_running"))
