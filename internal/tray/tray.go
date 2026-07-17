@@ -176,8 +176,8 @@ func (c *Controller) onReady() {
 	c.mUpdateGeo = c.mUpdate.AddSubMenuItem(i18n.T("update_geo"), "")
 	c.mUpdateApp = c.mUpdate.AddSubMenuItem(i18n.T("update_app"), "")
 
-	// 关于
-	c.mAbout = c.mSettings.AddSubMenuItem(i18n.TName("about"), "")
+	// 关于（标题带版本号，方便确认当前构建）
+	c.mAbout = c.mSettings.AddSubMenuItem(aboutMenuTitle(), "")
 
 	systray.AddSeparator()
 	c.mQuit = systray.AddMenuItem(i18n.T("quit"), "")
@@ -280,7 +280,8 @@ func (c *Controller) loop() {
 		case <-c.mLangEN.ClickedCh:
 			c.switchLang(i18n.EN)
 		case <-c.mAbout.ClickedCh:
-			// Project homepage (not the sing-box core repo)
+			// Show version in a toast, then open project homepage (not the sing-box core repo).
+			notify.Info(paths.AppName, i18n.TF("about_ver", update.AppVersion))
 			aboutURL := "https://github.com/yaog6700-bit/Swell-Box"
 			if update.AppReleaseRepo != "" {
 				aboutURL = "https://github.com/" + update.AppReleaseRepo
@@ -817,6 +818,11 @@ func (c *Controller) applyImportedNodes(nodes []sharelink.Node) []string {
 	return tags
 }
 
+// aboutMenuTitle is "关于 Swell-Box  v0.2.33" / "About Swell-Box  v0.2.33".
+func aboutMenuTitle() string {
+	return i18n.TF("about", paths.AppName, update.AppVersion)
+}
+
 func (c *Controller) doUpdateCore(channel string) {
 	notify.Info(paths.AppName, i18n.T("upd_checking"))
 	info, err := update.CheckCore(channel)
@@ -986,7 +992,7 @@ func (c *Controller) applyMenuLanguage() {
 	set(c.mOpenDir, "open_data")
 	set(c.mOpenLog, "open_log")
 	if c.mAbout != nil {
-		c.mAbout.SetTitle(i18n.TName("about"))
+		c.mAbout.SetTitle(aboutMenuTitle())
 	}
 	set(c.mQuit, "quit")
 	if running {
