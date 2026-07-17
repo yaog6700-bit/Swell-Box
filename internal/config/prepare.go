@@ -92,14 +92,31 @@ func applyTunMode(root map[string]any, enabled bool) {
 	inbounds = kept
 
 	if enabled && !hasUserTun(inbounds) {
+		// Dual-stack TUN is required on Windows when strict_route is on:
+		// IPv4-only address makes IPv6 "unsupported network unreachable",
+		// which breaks IPv6-only services (e.g. MTProto over IPv6).
+		// Addresses match sing-box docs defaults (IPv4 + ULA IPv6).
 		tunInbound := map[string]any{
-			"type":         "tun",
-			"tag":          SwellTunTag,
-			"address":      []any{"172.19.0.1/30"},
+			"type": "tun",
+			"tag":  SwellTunTag,
+			"address": []any{
+				"172.19.0.1/30",
+				"fdfe:dcba:9876::1/126",
+			},
 			"mtu":          9000,
 			"auto_route":   true,
 			"strict_route": true,
 			"stack":        "mixed",
+			// Keep LAN / ULA off the tunnel route table when possible so local
+			// IPv6 services (home LAN, self-hosted MTP on ULA) stay reachable.
+			// Global unicast IPv6 still goes through TUN + route rules.
+			"route_exclude_address": []any{
+				"192.168.0.0/16",
+				"10.0.0.0/8",
+				"172.16.0.0/12",
+				"fc00::/7",
+				"fe80::/10",
+			},
 		}
 		// macOS only allows utun* interface names — omit interface_name and
 		// let sing-box auto-assign one (it picks the next available utunN).
