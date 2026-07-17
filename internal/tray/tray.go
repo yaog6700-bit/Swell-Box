@@ -564,6 +564,25 @@ func (c *Controller) proxyAddr() string {
 	return "127.0.0.1:7890"
 }
 
+// preferredCorePath returns the absolute core binary Start() must use.
+// Priority: existing ~/.swellbox/bin core → app.json core_path → empty (auto).
+func preferredCorePath(settings *config.AppSettings) string {
+	name := paths.CoreBinaryName()
+	if binDir, err := paths.BinDir(); err == nil {
+		p := filepath.Join(binDir, name)
+		if st, err := os.Stat(p); err == nil && !st.IsDir() && st.Size() > 0 {
+			if abs, err := filepath.Abs(p); err == nil {
+				return abs
+			}
+			return p
+		}
+	}
+	if settings != nil && strings.TrimSpace(settings.CorePath) != "" {
+		return settings.CorePath
+	}
+	return ""
+}
+
 func (c *Controller) coreChannel() string {
 	if c.App != nil && c.App.CoreChannel == update.ChannelStable {
 		return update.ChannelStable
@@ -952,6 +971,14 @@ func (c *Controller) doUpdateCore(channel string) {
 	if err != nil {
 		notify.Error(paths.AppName, i18n.T("upd_core_fail")+err.Error())
 		return
+	}
+	// Point settings at the data-dir binary so a later start cannot fall back
+	// to the older copy shipped next to Swell-Box.exe.
+	if c.App != nil {
+		if p, err := update.ResolvedCorePath(); err == nil && p != "" {
+			c.App.CorePath = p
+			_ = config.SaveAppSettings(c.App)
+		}
 	}
 	notify.Info(paths.AppName, fmt.Sprintf(i18n.T("upd_core_ok"), ver))
 }
@@ -1400,9 +1427,9 @@ func (c *Controller) startProxy() error {
 		return err
 	}
 
-	if c.App != nil {
-		c.Core.CorePath = c.App.CorePath
-	}
+	// Always prefer ~/.swellbox/bin when present — that is where "Update Core"
+	// installs. Do not keep using the sing-box next to Swell-Box.exe from the zip.
+	c.Core.CorePath = preferredCorePath(c.App)
 	c.Core.ConfigPath = runtimePath
 	c.Core.WorkDir = home
 	// macOS: elevate only the core process for TUN (password prompt once at start).

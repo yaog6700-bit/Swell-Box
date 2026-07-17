@@ -3,6 +3,7 @@ package core
 import (
 	"fmt"
 	"io"
+	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -118,6 +119,12 @@ func (m *Manager) Start() error {
 		m.mu.Unlock()
 		return err
 	}
+	if abs, err := filepath.Abs(bin); err == nil {
+		bin = abs
+	}
+	// Always log which binary is started — users often have both the zip copy
+	// and ~/.swellbox/bin; only one actually runs.
+	log.Printf("starting core: %s", bin)
 	if m.ConfigPath == "" {
 		m.mu.Unlock()
 		return fmt.Errorf("config path is empty")
