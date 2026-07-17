@@ -8,46 +8,68 @@ package notify
 
 #include <stdlib.h>
 #import <Foundation/Foundation.h>
+#import <UserNotifications/UserNotifications.h>
 
-@interface SwellNotificationDelegate : NSObject <NSUserNotificationCenterDelegate>
+// Delegate that always presents the notification even when app is in foreground.
+@interface SwellUNDelegate : NSObject <UNUserNotificationCenterDelegate>
 @end
 
-@implementation SwellNotificationDelegate
-- (BOOL)userNotificationCenter:(NSUserNotificationCenter *)center shouldPresentNotification:(NSUserNotification *)notification {
-    return YES;
+@implementation SwellUNDelegate
+- (void)userNotificationCenter:(UNUserNotificationCenter *)center
+       willPresentNotification:(UNNotification *)notification
+         withCompletionHandler:(void (^)(UNNotificationPresentationOptions))completionHandler {
+    completionHandler(UNNotificationPresentationOptionBanner |
+                      UNNotificationPresentationOptionSound);
 }
 @end
 
-static SwellNotificationDelegate *swellDelegate = nil;
+static SwellUNDelegate *_swellDelegate = nil;
 
-static void swellbox_deliver(NSString *title, NSString *body) {
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wdeprecated-declarations"
-	NSUserNotification *notif = [[NSUserNotification alloc] init];
-	notif.title = title ?: @"";
-	notif.informativeText = body ?: @"";
-	[[NSUserNotificationCenter defaultUserNotificationCenter] deliverNotification:notif];
-#pragma clang diagnostic pop
+// Request auth and set delegate. Must be called on the main thread (or any
+// thread — UNUserNotificationCenter is thread-safe). Uses sync.Once in Go.
+// NOTE: On macOS 12+, UNUserNotificationCenter requires a valid code signature
+// (at minimum ad-hoc) for the authorization dialog to appear.
+static void swellbox_request_notify_auth(void) {
+    @autoreleasepool {
+        if (!_swellDelegate) {
+            _swellDelegate = [[SwellUNDelegate alloc] init];
+            [UNUserNotificationCenter currentNotificationCenter].delegate = _swellDelegate;
+        }
+        UNAuthorizationOptions opts =
+            UNAuthorizationOptionAlert | UNAuthorizationOptionSound;
+        [[UNUserNotificationCenter currentNotificationCenter]
+            requestAuthorizationWithOptions:opts
+                          completionHandler:^(BOOL granted, NSError *err) {
+            if (err) {
+                NSLog(@"[SwellBox] notify auth error: %@", err.localizedDescription);
+            }
+        }];
+    }
 }
 
 static void swellbox_notify(const char *title, const char *body) {
-	@autoreleasepool {
-		NSString *t = title ? [NSString stringWithUTF8String:title] : @"";
-		NSString *b = body ? [NSString stringWithUTF8String:body] : @"";
-		swellbox_deliver(t, b);
-	}
-}
+    @autoreleasepool {
+        UNMutableNotificationContent *content =
+            [[UNMutableNotificationContent alloc] init];
+        content.title = title ? [NSString stringWithUTF8String:title] : @"";
+        content.body  = body  ? [NSString stringWithUTF8String:body]  : @"";
+        content.sound = [UNNotificationSound defaultSound];
 
-static void swellbox_request_notify_auth(void) {
-	@autoreleasepool {
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wdeprecated-declarations"
-		if (!swellDelegate) {
-			swellDelegate = [[SwellNotificationDelegate alloc] init];
-			[NSUserNotificationCenter defaultUserNotificationCenter].delegate = swellDelegate;
-		}
-#pragma clang diagnostic pop
-	}
+        // Unique identifier so each notification is independent.
+        NSString *identifier = [[NSUUID UUID] UUIDString];
+        UNNotificationRequest *req =
+            [UNNotificationRequest requestWithIdentifier:identifier
+                                                 content:content
+                                                 trigger:nil];   // nil = deliver immediately
+
+        [[UNUserNotificationCenter currentNotificationCenter]
+            addNotificationRequest:req
+             withCompletionHandler:^(NSError *err) {
+            if (err) {
+                NSLog(@"[SwellBox] notify deliver error: %@", err.localizedDescription);
+            }
+        }];
+    }
 }
 */
 import "C"

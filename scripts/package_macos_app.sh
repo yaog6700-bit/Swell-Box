@@ -83,9 +83,18 @@ cat > "$OUT_APP/Contents/Info.plist" <<EOF
   <true/>
   <key>NSSupportsAutomaticGraphicsSwitching</key>
   <true/>
+  <key>NSUserNotificationAlertStyle</key>
+  <string>alert</string>
 </dict>
 </plist>
 EOF
 
 printf 'APPL????' > "$OUT_APP/Contents/PkgInfo"
-echo "OK -> $OUT_APP"
+
+# Code-sign the bundle.  UNUserNotificationCenter (macOS 12+) requires at
+# least an ad-hoc signature for the notification-permission dialog to appear.
+# Override CODESIGN_IDENTITY with a real "Developer ID Application: …" cert
+# in CI to produce a Gatekeeper-accepted build.
+CODESIGN_IDENTITY="${CODESIGN_IDENTITY:--}"   # default: ad-hoc
+codesign --sign "$CODESIGN_IDENTITY" --force --deep "$OUT_APP"
+echo "OK -> $OUT_APP  (signed with '${CODESIGN_IDENTITY}')"
