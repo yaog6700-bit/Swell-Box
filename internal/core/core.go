@@ -43,7 +43,14 @@ func (m *Manager) Running() bool {
 }
 
 // ResolveBinary finds the sing-box executable.
-// Order: explicit CorePath → next to this app → ~/.swellbox/bin → PATH.
+// Order must match update.resolveCoreBin so "check core update" and the
+// running process use the same file:
+//
+//	explicit CorePath → ~/.swellbox/bin (in-app updates) → next to app → PATH
+//
+// Previously "next to app" was preferred, so a successful tray update wrote
+// a new binary under ~/.swellbox/bin while Start() kept launching the older
+// copy shipped next to Swell-Box.exe — Dashboard still showed the old version.
 func (m *Manager) ResolveBinary() (string, error) {
 	name := paths.CoreBinaryName()
 
@@ -54,7 +61,15 @@ func (m *Manager) ResolveBinary() (string, error) {
 		return "", fmt.Errorf("core_path not found: %s", m.CorePath)
 	}
 
-	// Next to the Swell-Box executable (incl. macOS .app layouts).
+	// 1) User data bin — destination of "Update Core" / EnsureCore installs.
+	if binDir, err := paths.BinDir(); err == nil {
+		candidate := filepath.Join(binDir, name)
+		if st, err := os.Stat(candidate); err == nil && !st.IsDir() && st.Size() > 0 {
+			return candidate, nil
+		}
+	}
+
+	// 2) Next to the Swell-Box executable (incl. macOS .app layouts / full.zip).
 	if exePath, err := os.Executable(); err == nil {
 		if r, err := filepath.EvalSymlinks(exePath); err == nil {
 			exePath = r
@@ -67,21 +82,13 @@ func (m *Manager) ResolveBinary() (string, error) {
 			filepath.Clean(filepath.Join(dir, "..", "Resources", name)),
 			filepath.Clean(filepath.Join(dir, "..", "..", "..", name)),
 		} {
-			if st, err := os.Stat(candidate); err == nil && !st.IsDir() {
+			if st, err := os.Stat(candidate); err == nil && !st.IsDir() && st.Size() > 0 {
 				return candidate, nil
 			}
 		}
 	}
 
-	// User data bin dir.
-	if binDir, err := paths.BinDir(); err == nil {
-		candidate := filepath.Join(binDir, name)
-		if st, err := os.Stat(candidate); err == nil && !st.IsDir() {
-			return candidate, nil
-		}
-	}
-
-	// PATH
+	// 3) PATH
 	if p, err := exec.LookPath(name); err == nil {
 		return p, nil
 	}

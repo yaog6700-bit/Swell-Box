@@ -287,14 +287,18 @@ func (c *Controller) loop() {
 		case <-c.mLangEN.ClickedCh:
 			c.switchLang(i18n.EN)
 		case <-c.mAbout.ClickedCh:
-			// Show version (and latest if badge is on), then open project homepage.
+			// App + core version (same binary Start() uses), then project homepage.
 			c.mu.Lock()
 			hasUp, latest := c.appHasUpdate, c.appLatestVer
 			c.mu.Unlock()
+			coreVer := update.InstalledCoreVersion()
+			if coreVer == "" {
+				coreVer = i18n.T("core_ver_unknown")
+			}
 			if hasUp && latest != "" {
-				notify.Info(paths.AppName, i18n.TF("about_ver_update", update.AppVersion, latest))
+				notify.Info(paths.AppName, i18n.TF("about_ver_update_core", update.AppVersion, latest, coreVer))
 			} else {
-				notify.Info(paths.AppName, i18n.TF("about_ver", update.AppVersion))
+				notify.Info(paths.AppName, i18n.TF("about_ver_core", update.AppVersion, coreVer))
 			}
 			aboutURL := "https://github.com/yaog6700-bit/Swell-Box"
 			if update.AppReleaseRepo != "" {
@@ -933,7 +937,12 @@ func (c *Controller) doUpdateCore(channel string) {
 	}
 	// Same version string → skip (allows switching stable↔pre when tags differ).
 	if info.Latest != "" && cur == info.Latest {
-		notify.Info(paths.AppName, fmt.Sprintf(i18n.T("upd_core_latest"), cur))
+		// Show path so user can confirm which binary is considered "installed".
+		msg := fmt.Sprintf(i18n.T("upd_core_latest"), cur)
+		if p, err := update.ResolvedCorePath(); err == nil && p != "" {
+			msg = msg + "\n" + p
+		}
+		notify.Info(paths.AppName, msg)
 		return
 	}
 	notify.Info(paths.AppName, fmt.Sprintf(i18n.T("upd_core_avail"), info.Latest, cur))

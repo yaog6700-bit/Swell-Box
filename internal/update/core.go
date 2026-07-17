@@ -99,13 +99,23 @@ func fetchNewestRelease(allowPre bool) (*ghRelease, error) {
 	return nil, fmt.Errorf("no suitable sing-box release found")
 }
 
+// InstalledCoreVersion runs `sing-box version` on the binary that Start() uses
+// (~/.swellbox/bin first). Empty if no core is found.
+func InstalledCoreVersion() string {
+	return installedCoreVersion()
+}
+
+// ResolvedCorePath returns the absolute path of the core binary that will run.
+func ResolvedCorePath() (string, error) {
+	return resolveCoreBin()
+}
+
 func installedCoreVersion() string {
 	bin, err := resolveCoreBin()
 	if err != nil {
 		return ""
 	}
-	// run sing-box version
-	// avoid import cycle with core 鈥?exec here
+	// run sing-box version — avoid import cycle with core (exec here)
 	out, err := runCmd(bin, "version")
 	if err != nil {
 		return ""
@@ -123,18 +133,30 @@ func installedCoreVersion() string {
 	return strings.TrimSpace(out)
 }
 
+// resolveCoreBin order MUST match core.Manager.ResolveBinary (without CorePath override).
 func resolveCoreBin() (string, error) {
 	name := paths.CoreBinaryName()
 	if binDir, err := paths.BinDir(); err == nil {
 		p := filepath.Join(binDir, name)
-		if st, err := os.Stat(p); err == nil && !st.IsDir() {
+		if st, err := os.Stat(p); err == nil && !st.IsDir() && st.Size() > 0 {
 			return p, nil
 		}
 	}
 	if exe, err := os.Executable(); err == nil {
-		p := filepath.Join(filepath.Dir(exe), name)
-		if st, err := os.Stat(p); err == nil && !st.IsDir() {
-			return p, nil
+		if r, err := filepath.EvalSymlinks(exe); err == nil {
+			exe = r
+		}
+		dir := filepath.Dir(exe)
+		for _, p := range []string{
+			filepath.Join(dir, name),
+			filepath.Join(dir, "bin", name),
+			filepath.Join(dir, "core", name),
+			filepath.Clean(filepath.Join(dir, "..", "Resources", name)),
+			filepath.Clean(filepath.Join(dir, "..", "..", "..", name)),
+		} {
+			if st, err := os.Stat(p); err == nil && !st.IsDir() && st.Size() > 0 {
+				return p, nil
+			}
 		}
 	}
 	return "", fmt.Errorf("core binary not found")
