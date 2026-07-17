@@ -42,12 +42,40 @@ func TestApplyTunModeInjectsDualStack(t *testing.T) {
 	if !hasV4 || !hasV6 {
 		t.Fatalf("address=%v missing dual-stack entries", addrs)
 	}
-	if tun["auto_route"] != true || tun["strict_route"] != true {
-		t.Fatalf("auto_route/strict_route not set: %#v", tun)
+	if tun["auto_route"] != true {
+		t.Fatalf("auto_route not set: %#v", tun)
+	}
+	// Must match Anywhere: strict_route false so IPv6/WFP is not blackholed.
+	if tun["strict_route"] != false {
+		t.Fatalf("strict_route=%v want false", tun["strict_route"])
+	}
+	ex, _ := tun["route_exclude_address"].([]any)
+	if len(ex) < 4 {
+		t.Fatalf("route_exclude_address too short: %v", ex)
 	}
 	route, _ := root["route"].(map[string]any)
 	if route["auto_detect_interface"] != true {
 		t.Fatalf("route.auto_detect_interface=%v", route["auto_detect_interface"])
+	}
+}
+
+func TestBindDirectOutbounds(t *testing.T) {
+	root := map[string]any{
+		"outbounds": []any{
+			map[string]any{"type": "selector", "tag": "proxy", "outbounds": []any{"direct"}},
+			map[string]any{"type": "direct", "tag": "direct"},
+			map[string]any{"type": "direct", "tag": "direct-bound", "bind_interface": "keep-me"},
+		},
+	}
+	bindDirectOutbounds(root, "Ethernet")
+	outs := root["outbounds"].([]any)
+	d := outs[1].(map[string]any)
+	if d["bind_interface"] != "Ethernet" {
+		t.Fatalf("direct bind=%v", d["bind_interface"])
+	}
+	kept := outs[2].(map[string]any)
+	if kept["bind_interface"] != "keep-me" {
+		t.Fatalf("should not override existing bind: %v", kept["bind_interface"])
 	}
 }
 

@@ -92,10 +92,11 @@ func applyTunMode(root map[string]any, enabled bool) {
 	inbounds = kept
 
 	if enabled && !hasUserTun(inbounds) {
-		// Dual-stack TUN is required on Windows when strict_route is on:
-		// IPv4-only address makes IPv6 "unsupported network unreachable",
-		// which breaks IPv6-only services (e.g. MTProto over IPv6).
-		// Addresses match sing-box docs defaults (IPv4 + ULA IPv6).
+		// Align with AnywhereWinUI / Swell Proxy TUN that works with IPv6 MTP:
+		//  - dual-stack address (IPv4-only + strict_route blackholes v6 on Windows)
+		//  - strict_route=false (WFP "unsupported network unreachable" / WSAEACCES)
+		//  - exclude LAN/ULA + bootstrap DNS from the TUN route table
+		//  - bind "direct" to the physical NIC (see bindDirectOutbounds)
 		tunInbound := map[string]any{
 			"type": "tun",
 			"tag":  SwellTunTag,
@@ -105,32 +106,68 @@ func applyTunMode(root map[string]any, enabled bool) {
 			},
 			"mtu":          9000,
 			"auto_route":   true,
-			"strict_route": true,
+			"strict_route": false,
 			"stack":        "mixed",
-			// Keep LAN / ULA off the tunnel route table when possible so local
-			// IPv6 services (home LAN, self-hosted MTP on ULA) stay reachable.
-			// Global unicast IPv6 still goes through TUN + route rules.
 			"route_exclude_address": []any{
-				"192.168.0.0/16",
 				"10.0.0.0/8",
 				"172.16.0.0/12",
+				"192.168.0.0/16",
+				"100.64.0.0/10",
+				"169.254.0.0/16",
+				"127.0.0.0/8",
 				"fc00::/7",
 				"fe80::/10",
+				// Bootstrap DNS IPs — keep resolver traffic off the TUN table.
+				"223.5.5.5/32",
+				"114.114.114.114/32",
+				"8.8.8.8/32",
+				"1.1.1.1/32",
 			},
 		}
 		// macOS only allows utun* interface names — omit interface_name and
 		// let sing-box auto-assign one (it picks the next available utunN).
 		inbounds = append(inbounds, tunInbound)
+	}
 
+	if enabled {
 		// Avoid routing loops when TUN takes over the default route.
 		route, _ := root["route"].(map[string]any)
 		if route == nil {
 			route = map[string]any{}
 		}
 		route["auto_detect_interface"] = true
+		if ifName := defaultOutboundInterface(); ifName != "" {
+			// Prefer explicit default when detection works (matches Anywhere).
+			route["default_interface"] = ifName
+			bindDirectOutbounds(root, ifName)
+		}
 		root["route"] = route
 	}
 	root["inbounds"] = inbounds
+}
+
+// bindDirectOutbounds sets bind_interface on direct outbounds so return path
+// traffic leaves via the physical NIC instead of re-entering TUN.
+func bindDirectOutbounds(root map[string]any, ifName string) {
+	if ifName == "" {
+		return
+	}
+	outbounds, _ := root["outbounds"].([]any)
+	for i, item := range outbounds {
+		m, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		if t, _ := m["type"].(string); t != "direct" {
+			continue
+		}
+		if _, has := m["bind_interface"]; has {
+			continue
+		}
+		m["bind_interface"] = ifName
+		outbounds[i] = m
+	}
+	root["outbounds"] = outbounds
 }
 
 func hasUserTun(inbounds []any) bool {
