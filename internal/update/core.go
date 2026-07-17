@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -140,7 +141,9 @@ func resolveCoreBin() (string, error) {
 }
 
 // UpdateCore downloads sing-box for the given channel and installs into ~/.swellbox/bin.
-// stopFn should stop the running core before replace; may be nil.
+// Download/extract runs first so TUN/system proxy can still help reach GitHub; stopFn is
+// only called right before replacing the on-disk binary (which may be locked while running).
+// stopFn may be nil. Temp archive under os.TempDir is always removed via defer.
 func UpdateCore(channel string, stopFn func() error) (string, error) {
 	info, err := CheckCore(channel)
 	if err != nil {
@@ -148,10 +151,6 @@ func UpdateCore(channel string, stopFn func() error) (string, error) {
 	}
 	if info.AssetURL == "" {
 		return "", fmt.Errorf("no asset for this platform")
-	}
-	if stopFn != nil {
-		_ = stopFn()
-		time.Sleep(500 * time.Millisecond)
 	}
 
 	binDir, err := paths.BinDir()
@@ -168,18 +167,24 @@ func UpdateCore(channel string, stopFn func() error) (string, error) {
 	}
 	defer os.RemoveAll(tmpDir)
 
+	// 1) Download + extract while the old core may still be proxying traffic.
 	archivePath := filepath.Join(tmpDir, info.AssetName)
 	if err := downloadFile(info.AssetURL, archivePath); err != nil {
 		return "", err
 	}
-
 	extracted, err := extractCoreBinary(archivePath, tmpDir)
 	if err != nil {
 		return "", err
 	}
 
+	// 2) Stop running core only when we are ready to replace the file.
+	if stopFn != nil {
+		_ = stopFn()
+		time.Sleep(500 * time.Millisecond)
+	}
+
+	// 3) Install into data dir; Windows may need remove first if the file was locked.
 	dest := filepath.Join(binDir, paths.CoreBinaryName())
-	// Windows: may need to remove old file if locked
 	_ = os.Remove(dest)
 	data, err := os.ReadFile(extracted)
 	if err != nil {
@@ -374,7 +379,7 @@ func fetchJSONList(url string) ([]ghRelease, error) {
 }
 
 func httpGet(url string) ([]byte, error) {
-	client := &http.Client{Timeout: 30 * time.Second}
+	client := newHTTPClient(45 * time.Second)
 	req, err := http.NewRequest(http.MethodGet, url, nil)
 	if err != nil {
 		return nil, err
@@ -406,8 +411,76 @@ func httpGet(url string) ([]byte, error) {
 	return body, nil
 }
 
+// newHTTPClient builds a client that respects HTTP(S)_PROXY and separates
+// connect/header timeouts from body transfer. overall is the total request
+// deadline (0 = no overall limit; only transport-level timeouts apply).
+func newHTTPClient(overall time.Duration) *http.Client {
+	return &http.Client{
+		Timeout: overall,
+		Transport: &http.Transport{
+			Proxy: http.ProxyFromEnvironment,
+			DialContext: (&net.Dialer{
+				Timeout:   30 * time.Second,
+				KeepAlive: 30 * time.Second,
+			}).DialContext,
+			TLSHandshakeTimeout:   30 * time.Second,
+			ResponseHeaderTimeout: 60 * time.Second,
+			IdleConnTimeout:       90 * time.Second,
+			ForceAttemptHTTP2:     true,
+		},
+	}
+}
+
+// downloadFile fetches a large release asset. GitHub assets are ~20MB+; on slow
+// or interrupted links a short Client.Timeout produces:
+//
+//	context deadline exceeded (Client.Timeout or context cancellation while reading body)
+//
+// Strategy: long total budget, retries, then public GitHub mirrors as fallback.
 func downloadFile(url, dest string) error {
-	client := &http.Client{Timeout: 5 * time.Minute}
+	candidates := downloadURLCandidates(url)
+	var lastErr error
+	for _, u := range candidates {
+		for attempt := 1; attempt <= 2; attempt++ {
+			if err := downloadFileOnce(u, dest); err != nil {
+				lastErr = err
+				_ = os.Remove(dest)
+				if attempt < 2 {
+					time.Sleep(time.Duration(attempt) * 2 * time.Second)
+				}
+				continue
+			}
+			return nil
+		}
+	}
+	if lastErr == nil {
+		lastErr = fmt.Errorf("download failed")
+	}
+	return fmt.Errorf("%w (network slow/blocked? try proxy or manual install of sing-box)", lastErr)
+}
+
+func downloadURLCandidates(url string) []string {
+	out := []string{url}
+	// Only mirror official GitHub release/object URLs.
+	if !strings.Contains(url, "github.com/") && !strings.Contains(url, "githubusercontent.com/") {
+		return out
+	}
+	// Public reverse proxies commonly used when github.com is slow (e.g. CN).
+	// Tried only after the direct URL fails.
+	mirrors := []string{
+		"https://ghfast.top/",
+		"https://mirror.ghproxy.com/",
+		"https://ghproxy.net/",
+	}
+	for _, m := range mirrors {
+		out = append(out, m+url)
+	}
+	return out
+}
+
+func downloadFileOnce(url, dest string) error {
+	// 30 minutes covers ~20–40MB assets on very slow links without failing mid-body.
+	client := newHTTPClient(30 * time.Minute)
 	req, err := http.NewRequest(http.MethodGet, url, nil)
 	if err != nil {
 		return err
@@ -418,14 +491,31 @@ func downloadFile(url, dest string) error {
 		return err
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode != 200 {
+	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("download http %d", resp.StatusCode)
 	}
 	out, err := os.Create(dest)
 	if err != nil {
 		return err
 	}
-	defer out.Close()
-	_, err = io.Copy(out, resp.Body)
-	return err
+	// Ensure partial files are discarded on failure.
+	ok := false
+	defer func() {
+		out.Close()
+		if !ok {
+			_ = os.Remove(dest)
+		}
+	}()
+	n, err := io.Copy(out, resp.Body)
+	if err != nil {
+		return err
+	}
+	if n < 1024 {
+		return fmt.Errorf("download too small (%d bytes)", n)
+	}
+	if err := out.Close(); err != nil {
+		return err
+	}
+	ok = true
+	return nil
 }

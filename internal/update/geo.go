@@ -2,11 +2,8 @@ package update
 
 import (
 	"fmt"
-	"io"
-	"net/http"
 	"os"
 	"path/filepath"
-	"time"
 
 	"github.com/swell-app/swellbox/internal/paths"
 )
@@ -38,40 +35,31 @@ func UpdateGeoRules() error {
 		return err
 	}
 
-	client := &http.Client{Timeout: 3 * time.Minute}
 	for _, f := range geoFiles {
-		if err := downloadGeo(client, f.URL, filepath.Join(dir, f.Name)); err != nil {
+		// Reuse robust downloader (long timeout, retries, GitHub mirrors).
+		tmp := filepath.Join(dir, f.Name+".tmp")
+		if err := downloadFile(f.URL, tmp); err != nil {
+			_ = os.Remove(tmp)
 			return fmt.Errorf("%s: %w", f.Name, err)
+		}
+		// Guard against empty/corrupt payloads (downloadFile already checks >=1KB).
+		if st, err := os.Stat(tmp); err != nil || st.Size() < 64 {
+			_ = os.Remove(tmp)
+			return fmt.Errorf("%s: file too small", f.Name)
+		}
+		dest := filepath.Join(dir, f.Name)
+		_ = os.Remove(dest)
+		if err := os.Rename(tmp, dest); err != nil {
+			// Cross-device rename fallback
+			data, rerr := os.ReadFile(tmp)
+			_ = os.Remove(tmp)
+			if rerr != nil {
+				return fmt.Errorf("%s: %w", f.Name, err)
+			}
+			if werr := os.WriteFile(dest, data, 0o644); werr != nil {
+				return fmt.Errorf("%s: %w", f.Name, werr)
+			}
 		}
 	}
 	return nil
-}
-
-func downloadGeo(client *http.Client, url, dest string) error {
-	req, err := http.NewRequest(http.MethodGet, url, nil)
-	if err != nil {
-		return err
-	}
-	req.Header.Set("User-Agent", "Swell-Box/"+AppVersion)
-	resp, err := client.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("http %d", resp.StatusCode)
-	}
-	data, err := io.ReadAll(io.LimitReader(resp.Body, 32<<20)) // 32MB max
-	if err != nil {
-		return err
-	}
-	if len(data) < 64 {
-		return fmt.Errorf("file too small (%d bytes)", len(data))
-	}
-	tmp := dest + ".tmp"
-	if err := os.WriteFile(tmp, data, 0o644); err != nil {
-		return err
-	}
-	_ = os.Remove(dest)
-	return os.Rename(tmp, dest)
 }
