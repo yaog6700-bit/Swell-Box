@@ -34,7 +34,7 @@ func PrepareRuntimeConfig(userConfigPath, runtimePath string, dashboardPort int,
 	}
 	ensureAPIService(root, dashboardPort)
 	ensureClashAPI(root, "127.0.0.1:9090")
-	ensureCacheFile(root)
+	ensureCacheFile(root, tunMode)
 	// Prefer local rule-set files under workdir (offline-first).
 	preferLocalRuleSets(root)
 	// sing-box ≥1.12 rejects detour:"direct" on DNS servers.
@@ -92,16 +92,19 @@ func applyTunMode(root map[string]any, enabled bool) {
 	inbounds = kept
 
 	if enabled && !hasUserTun(inbounds) {
-		inbounds = append(inbounds, map[string]any{
-			"type":           "tun",
-			"tag":            SwellTunTag,
-			"interface_name": "swell-tun",
-			"address":        []any{"172.19.0.1/30"},
-			"mtu":            9000,
-			"auto_route":     true,
-			"strict_route":   true,
-			"stack":          "mixed",
-		})
+		tunInbound := map[string]any{
+			"type":         "tun",
+			"tag":          SwellTunTag,
+			"address":      []any{"172.19.0.1/30"},
+			"mtu":          9000,
+			"auto_route":   true,
+			"strict_route": true,
+			"stack":        "mixed",
+		}
+		// macOS only allows utun* interface names — omit interface_name and
+		// let sing-box auto-assign one (it picks the next available utunN).
+		inbounds = append(inbounds, tunInbound)
+
 		// Avoid routing loops when TUN takes over the default route.
 		route, _ := root["route"].(map[string]any)
 		if route == nil {
@@ -183,7 +186,7 @@ func ensureClashAPI(root map[string]any, addr string) {
 	root["experimental"] = exp
 }
 
-func ensureCacheFile(root map[string]any) {
+func ensureCacheFile(root map[string]any, tunMode bool) {
 	exp, _ := root["experimental"].(map[string]any)
 	if exp == nil {
 		exp = map[string]any{}
@@ -195,12 +198,13 @@ func ensureCacheFile(root map[string]any) {
 	if cf["enabled"] == nil {
 		cf["enabled"] = true
 	}
-	if cf["path"] == nil || cf["path"] == "" {
+	// TUN mode runs sing-box as root (macOS). Use a separate cache file so it
+	// never contends the SQLite lock with the normal user-mode process.
+	// Force-override the path in TUN mode even if the user config set one.
+	if tunMode {
+		cf["path"] = "cache-tun.db"
+	} else if cf["path"] == nil || cf["path"] == "" {
 		cf["path"] = "cache.db"
-	}
-	// store selector choice across restarts
-	if cf["store_selected"] == nil {
-		// newer sing-box uses cache_file only; keep path
 	}
 	exp["cache_file"] = cf
 	root["experimental"] = exp

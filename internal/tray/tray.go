@@ -519,8 +519,19 @@ func (c *Controller) elevateAndExit() {
 }
 
 func (c *Controller) reloadProxyForTun() {
-	c.suppressConfigWatch(2 * time.Second)
+	c.suppressConfigWatch(3 * time.Second)
 	_ = c.stopProxy()
+	// macOS TUN runs sing-box as root via osascript. The root process may
+	// hold the SQLite cache.db lock for up to ~1s after we send SIGTERM.
+	// Wait long enough for it to exit before starting a fresh instance,
+	// otherwise sing-box fails with "initialize cache-file: timeout".
+	if runtime.GOOS == "darwin" {
+		time.Sleep(2 * time.Second)
+		// Remove stale cache.db so the new process creates a clean one.
+		if home, err := paths.HomeDir(); err == nil {
+			_ = os.Remove(filepath.Join(home, "cache.db"))
+		}
+	}
 	if err := c.startProxy(); err != nil {
 		c.setStatus(false, err.Error())
 		notify.Error(paths.AppName, i18n.T("start_failed")+err.Error())
