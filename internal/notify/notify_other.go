@@ -1,4 +1,4 @@
-//go:build !windows
+//go:build !windows && !darwin
 
 package notify
 
@@ -17,6 +17,8 @@ var (
 	once    sync.Once
 	iconPNG string
 )
+
+func ensurePermission() {}
 
 func initIcon() {
 	once.Do(func() {

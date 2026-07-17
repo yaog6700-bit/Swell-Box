@@ -41,11 +41,11 @@ type Controller struct {
 	Core  *core.Manager
 	App   *config.AppSettings
 
-	mu           sync.Mutex
-	mProxy       *systray.MenuItem
-	mRestart     *systray.MenuItem
-	mDashboard   *systray.MenuItem
-	mStatus      *systray.MenuItem
+	mu         sync.Mutex
+	mProxy     *systray.MenuItem
+	mRestart   *systray.MenuItem
+	mDashboard *systray.MenuItem
+	mStatus    *systray.MenuItem
 	// Group parents (top-level)
 	mSubs     *systray.MenuItem // 订阅：导入 / 更新 / 删除
 	mSettings *systray.MenuItem
@@ -84,20 +84,20 @@ type Controller struct {
 	mDeleteCfgEmpty *systray.MenuItem
 
 	// Dynamic node slots (switch + delete)
-	nodeSlots      []*systray.MenuItem
-	nodeTags       []string
-	nodeGroups     []string // clash group for each nodeTags[i] (region urltest or primary)
-	mNodesEmpty    *systray.MenuItem
-	mDeleteNodes   *systray.MenuItem
-	deleteSlots    []*systray.MenuItem
-	deleteTags     []string
-	mDeleteEmpty   *systray.MenuItem
-	selectorTag    string // top-level selector (proxy / Manual)
+	nodeSlots    []*systray.MenuItem
+	nodeTags     []string
+	nodeGroups   []string // clash group for each nodeTags[i] (region urltest or primary)
+	mNodesEmpty  *systray.MenuItem
+	mDeleteNodes *systray.MenuItem
+	deleteSlots  []*systray.MenuItem
+	deleteTags   []string
+	mDeleteEmpty *systray.MenuItem
+	selectorTag  string // top-level selector (proxy / Manual)
 
 	// Saved subscription delete slots
-	mDeleteSubs    *systray.MenuItem
-	subDelSlots    []*systray.MenuItem
-	subDelURLs     []string
+	mDeleteSubs     *systray.MenuItem
+	subDelSlots     []*systray.MenuItem
+	subDelURLs      []string
 	mDeleteSubEmpty *systray.MenuItem
 
 	// Config file watcher
@@ -184,6 +184,9 @@ func (c *Controller) onReady() {
 
 	go c.loop()
 
+	// macOS: request notification permission after Cocoa is up so banners use
+	// Swell-Box.app's pickaxe icon (beeep/osascript shows Script Editor).
+	notify.EnsurePermission()
 	notify.Info(paths.AppName, i18n.TName("app_running"))
 
 	// One-app experience: auto-fetch core on first run if missing.
@@ -671,8 +674,8 @@ func (c *Controller) importSubscription() {
 	notify.Info(paths.AppName, i18n.T("sub_importing"))
 
 	var (
-		nodes   []sharelink.Node
-		subURL  string // non-empty when fetched from a live subscription URL
+		nodes  []sharelink.Node
+		subURL string // non-empty when fetched from a live subscription URL
 	)
 	nodes, err = subscribe.FetchURL(text)
 	if err != nil {

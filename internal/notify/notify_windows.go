@@ -34,6 +34,8 @@ func initIcon() {
 	})
 }
 
+func ensurePermission() {}
+
 func show(title, message string, isError bool) {
 	initIcon()
 	beeep.AppName = paths.AppName
