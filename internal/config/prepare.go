@@ -95,6 +95,11 @@ func applyTunMode(root map[string]any, enabled bool) {
 				continue
 			}
 		}
+		// sing-box ≥1.15: "stack" is deprecated (removed in 1.17).
+		// Strip it from user-imported TUN inbounds to avoid breakage.
+		if t, _ := m["type"].(string); t == "tun" {
+			delete(m, "stack")
+		}
 		kept = append(kept, item)
 	}
 	inbounds = kept
@@ -112,10 +117,11 @@ func applyTunMode(root map[string]any, enabled bool) {
 				"172.19.0.1/30",
 				"fdfe:dcba:9876::1/126",
 			},
-			"mtu":                        9000,
-			"auto_route":                 true,
-			"strict_route":               false,
-			"stack":                      "mixed",
+			"mtu":          9000,
+			"auto_route":   true,
+			"strict_route": false,
+			// "stack" is deprecated in sing-box 1.15 and removed in 1.17.
+			// The new default built-in stack is used automatically.
 			"route_exclude_address": []any{
 				"10.0.0.0/8",
 				"172.16.0.0/12",
