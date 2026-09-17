@@ -75,14 +75,6 @@ jobs:
             runner: ubuntu-latest
             ext: ""
             core_bin: sing-box
-          # Build linux/arm64 via cross-compilation (aarch64 toolchain on x64).
-          # Much faster than QEMU emulation; CGO uses gcc-aarch64-linux-gnu.
-          - goos: linux
-            goarch: arm64
-            runner: ubuntu-latest
-            ext: ""
-            core_bin: sing-box
-            cross_arm64: true
 
     steps:
       - uses: actions/checkout@v4
@@ -144,30 +136,6 @@ jobs:
           } elseif (Test-Path $ico) {
             & $rsrc -ico $ico -arch $arch -o ".\cmd\swellbox\rsrc_windows_${arch}.syso"
           }
-
-      - name: Build Swell-Box (cross linux/arm64)
-        if: matrix.cross_arm64
-        shell: bash
-        env:
-          GOOS: linux
-          GOARCH: arm64
-          CGO_ENABLED: "1"
-          CC: aarch64-linux-gnu-gcc
-          # PKG_CONFIG_LIBDIR *replaces* the default search path so pkg-config
-          # resolves arm64 .pc files only, not the host x86_64 libraries.
-          # (PKG_CONFIG_PATH would only append and host paths would win.)
-          PKG_CONFIG_LIBDIR: /usr/lib/aarch64-linux-gnu/pkgconfig:/usr/share/pkgconfig
-          PKG_CONFIG_PATH: ""
-        run: |
-          set -euo pipefail
-          mkdir -p dist/package
-          VER="${{ needs.meta.outputs.version }}"
-          REPO="yaog6700-bit/Swell-Box"
-          LDFLAGS="-s -w -X github.com/swell-app/swellbox/internal/update.AppVersion=${VER} -X github.com/swell-app/swellbox/internal/update.AppReleaseRepo=${REPO}"
-          go build -buildvcs=false -ldflags "$LDFLAGS" -o dist/Swell-Box ./cmd/swellbox
-          chmod +x dist/Swell-Box
-          cp dist/Swell-Box dist/package/
-          ls -la dist/Swell-Box
 
       - name: Build Swell-Box
         if: ${{ !matrix.cross_arm64 }}
@@ -301,7 +269,6 @@ jobs:
             | Windows | arm64 | `Swell-Box-windows-arm64-full.zip` |
             | macOS | arm64 (Apple Silicon) | `Swell-Box-darwin-arm64-full.zip` (`Swell-Box.app` inside) |
             | Linux | amd64 | `Swell-Box-linux-amd64-full.zip` |
-            | Linux | arm64 | `Swell-Box-linux-arm64-full.zip` |
 
             Extract and run. Core is **only** inside these zips (no separate thin builds).
 

@@ -30,11 +30,6 @@ jobs:
             goarch: amd64
             runner: ubuntu-latest
             ext: ""
-          - goos: linux
-            goarch: arm64
-            runner: ubuntu-latest
-            ext: ""
-            docker_arm: true
 
     steps:
       - uses: actions/checkout@v4
@@ -45,12 +40,9 @@ jobs:
           go-version: "1.22.x"
           cache: true
 
-      - name: Set up QEMU (linux/arm64 Docker)
-        if: matrix.docker_arm
-        uses: docker/setup-qemu-action@v3
 
       - name: Install Linux tray deps
-        if: ${{ matrix.goos == 'linux' && !matrix.docker_arm }}
+        if: ${{ matrix.goos == 'linux' }}
         run: |
           set -euo pipefail
           echo 'Acquire::ForceIPv4 "true";' | sudo tee /etc/apt/apt.conf.d/99force-ipv4 >/dev/null
