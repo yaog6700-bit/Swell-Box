@@ -7,7 +7,10 @@
 **Repository:** [github.com/yaog6700-bit/Swell-Box](https://github.com/yaog6700-bit/Swell-Box)  
 **Binary:** `Swell-Box` / `Swell-Box.exe`
 
-> **设计架构**：托盘外壳 (Go) + 官方内核子进程 (官方独立编译，零侵入无 Vendor) + 内置轻量离线面板。
+> 💡 **项目渊源 (Upstream)**：本项目 Fork 并基于开源项目 [daodao97/SingBoxClient](https://github.com/daodao97/SingBoxClient) 进行深度重构与功能拓展，在此对原作者 [daodao97](https://github.com/daodao97) 的开源奉献致以由衷感谢！  
+> Forked and rewritten from [daodao97/SingBoxClient](https://github.com/daodao97/SingBoxClient). Special thanks to the original author for the pioneering work!  
+> 
+> **架构特点**：轻量托盘外壳 (Go) + 官方内核子进程 (官方独立编译，零侵入无 Vendor) + 内置轻量离线面板。
 
 ---
 
@@ -81,6 +84,14 @@ GOOS=darwin  GOARCH=arm64 CGO_ENABLED=1 go build -ldflags "-s -w" -o dist/Swell-
 # Linux x64
 GOOS=linux   GOARCH=amd64 CGO_ENABLED=1 go build -ldflags "-s -w" -o dist/Swell-Box ./cmd/swellbox
 ```
+
+---
+
+## 🙏 鸣谢与致敬 (Acknowledgements)
+
+- 🌟 **[daodao97/SingBoxClient](https://github.com/daodao97/SingBoxClient)**：感谢原项目作者 [daodao97](https://github.com/daodao97) 提供的开创性工作与坚实基础。
+- 📦 **[SagerNet/sing-box](https://github.com/SagerNet/sing-box)**：感谢 sing-box 官方团队打造的高性能通用通用代理平台。
+- 👟 **[mateo-ki/shoes](https://github.com/mateo-ki/shoes) / [cfal/shoes](https://github.com/cfal/shoes)**：感谢作者提供的高性能 Rust 多协议代理引擎。
 
 ---
 
