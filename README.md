@@ -1,137 +1,96 @@
 # Swell-Box
 
-**Swell-Box** is a lightweight system-tray client for [sing-box](https://github.com/SagerNet/sing-box).
+**Swell-Box** 是一款轻量、现代且易用的跨平台系统托盘代理客户端，原生支持 **sing-box** 与 **Shoes** 双核心架构，并内置完全离线的本地控制面板。
 
-**Repository:** [github.com/yaog6700-bit/Swell-Box](https://github.com/yaog6700-bit/Swell-Box)
+**Swell-Box** is a lightweight, modern cross-platform system-tray proxy client powered by a dual-engine architecture ([sing-box](https://github.com/SagerNet/sing-box) & [shoes](https://github.com/mateo-ki/shoes)), featuring an integrated offline dashboard.
 
-Brand: **Swell** · Binary: `Swell-Box` / `Swell-Box.exe`
+**Repository:** [github.com/yaog6700-bit/Swell-Box](https://github.com/yaog6700-bit/Swell-Box)  
+**Binary:** `Swell-Box` / `Swell-Box.exe`
 
-> Architecture: **tray shell (Go) + official sing-box binary (subprocess) + official Dashboard**.  
-> Inspired by [daodao97/SingBoxClient](https://github.com/daodao97/SingBoxClient), rewritten without vendoring the core.
+> **设计架构**：托盘外壳 (Go) + 官方内核子进程 (官方独立编译，零侵入无 Vendor) + 内置轻量离线面板。
 
-## Supported platforms
+---
 
-| OS | Architectures | Notes |
-|----|---------------|--------|
-| **Windows** | amd64, arm64 | Full tray + system proxy + autostart |
-| **macOS** | arm64 only | Apple Silicon (`M1/M2/M3…`) |
-| **Linux** | amd64, arm64 | Needs tray/appindicator libs at runtime |
+## 🌟 核心新功能亮点 (Key Features)
 
-## Features
+### 1. 🚀 双核心自由切换 (Dual-Core Engine)
+- **多核心无缝切换**：在托盘菜单中即可随时在 **sing-box** 与 **Shoes** 之间一键平滑切换，无需手动修改复杂配置。
+- **Shoes (Rust) 内核深度集成**：支持基于 Rust 的高性能多协议代理引擎 [mateo-ki/shoes](https://github.com/mateo-ki/shoes)，具备极佳的内存占用与并发性能。
+- **配置智能无缝转译**：基于 sing-box JSON 格式自动转译生成 Shoes 专用的 YAML 运行态配置，节点和路由策略保持同步。
+- **适配 Shoes 0.3.5+ 规范与自动自愈**：
+  - 适配 Shoes 0.3.5+ 全新分组规范（`type: selector`），并在启动检查中内置双向版本自愈重试机制，无缝兼容新旧版本。
+  - **完整支持 Shadowsocks 2022 Multi-User**：支持 `<server-key>:<user-key>` 双密钥密码格式，SS2022 节点零过滤全量可用。
+- **内核独立在线热更新**：支持在托盘内一键检查并在线更新 sing-box（Stable / Pre-release）与 Shoes 内核至官方最新版。
 
-- Start / Stop / Restart proxy from the tray
-- Official Dashboard (`http://127.0.0.1:9091/dashboard/`)
-- Import node share links (`ss` / `vmess` / `vless` / `trojan` / `hysteria` / `hysteria2` / `tuic` / `anytls` / `wireguard` / `socks` / `http` / `snell` / `naive` / `ssh`), subscription URL, or full config JSON
-- Multi-config switch + open in editor
-- Default split routing: CN direct / others via proxy (local `geosite-cn.srs` / `geoip-cn.srs`)
-- Update core (stable / pre-release), update Geo rules
-- Launch at login, auto-connect, system proxy
-- **TUN mode** (tray toggle; runtime inject; prefer run as admin)
-- Chinese / English UI
+### 2. 📊 内置离线控制面板 (Built-in Offline Dashboard)
+- **100% 离线可用**：使用 Go `embed` 内嵌轻量化 Web 控制台（默认监听 `127.0.0.1:9092`），在没有外网或初次配网阶段即可顺畅打开。
+- **零配置直达**：托盘点击 **Dashboard** 自动携带当前的 Clash API 端口与 Secret 鉴权凭据，一键打开即连接。
+- **可视化节点与流量掌控**：支持节点选择与延迟测速、实时速率/内存监控、活跃连接追踪与一键打断。
 
-## Requirements
+### 3. 🛡️ 智能分流与 TUN / 系统代理
+- **默认智能分流**：国内常见域名（`.cn` 及本地 `geosite-cn.srs`）和内网/国内 IP（`geoip-cn.srs`）自动直连，其余流量走代理。
+- **TUN 虚拟网卡模式**：托盘一键启闭 TUN 模式（支持管理员权限提权启动，兼容 sing-box 1.15+ 最新规范）。
+- **系统代理智能管理**：启动/退出自动设置或清除系统代理；当 TUN 模式接管时智能互斥，防止网络冲突。
 
-- Windows 10+, macOS 12+ (Apple Silicon), or a modern Linux desktop
-- Network once if core is missing (auto-download official `sing-box`)
+### 4. 🔗 广泛的节点与订阅协议支持
+- 一键导入节点分享链接、在线订阅 URL（自动定时更新），或载入完整 JSON 配置文件。
+- 协议支持矩阵覆盖：`Shadowsocks` (含 2022 单密钥与双密钥多用户)、`VMess` (WebSocket / TLS)、`VLESS` (Reality / Vision / TLS)、`Trojan`、`Hysteria`、`Hysteria2`、`TUIC`、`AnyTLS`、`WireGuard`、`SOCKS5`、`HTTP` 等。
 
-User data: `~/.swellbox/` (Windows: `%USERPROFILE%\.swellbox\`)
+---
 
-## Build
+## 🖥️ 支持平台 (Supported Platforms)
 
-### Local (Windows)
+| 操作系统 (OS) | 架构 (Arch) | 说明 (Notes) |
+|---|---|---|
+| **Windows** | x86_64 (`amd64`), ARM64 (`arm64`) | 托盘全功能、高清 DPI Manifest、开机自启、无黑框控制台 |
+| **macOS** | ARM64 (`arm64`) | 原生支持 Apple Silicon (`M1/M2/M3/M4`)，打包为独立 `.app` |
+| **Linux** | x86_64 (`amd64`) | 需系统桌面环境提供 libayatana-appindicator / GTK 支持 |
 
+---
+
+## 📦 下载与运行 (Quick Start)
+
+从 [GitHub Releases](https://github.com/yaog6700-bit/Swell-Box/releases) 下载对应平台的离线完整包：
+
+- **Windows:** 解压 `Swell-Box-windows-amd64-full.zip`，直接双击运行 `Swell-Box.exe`。
+- **macOS:** 解压 `Swell-Box-darwin-arm64-full.zip`，将 `Swell-Box.app` 拖入 **Applications** 启动（首次启动如提示损坏，在终端执行 `xattr -cr /Applications/Swell-Box.app` 即可）。
+- **Linux:** 解压对应压缩包后赋予执行权限 `./Swell-Box` 启动。
+
+> **数据存储目录**：所有配置文件、规则集与日志集中存放于用户目录下的 `~/.swellbox/`（Windows 为 `%USERPROFILE%\.swellbox\`）。
+
+---
+
+## 🛠️ 本地编译 (Build from Source)
+
+### 本地编译 Windows 版（推荐）
 ```powershell
-# Go 1.22+
+# 依赖 Go 1.22+
 cd swellbox
-go mod tidy
 .\scripts\build.ps1
+# 编译产物位于 dist/Swell-Box.exe (含嵌入图标、DPI Manifest 及无控制台窗优化)
 ```
 
-### Cross targets (any OS with Go)
-
+### 跨平台编译
 ```bash
-# examples
+# Windows x64
 GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -ldflags "-H=windowsgui -s -w" -o dist/Swell-Box.exe ./cmd/swellbox
+
+# macOS ARM64
 GOOS=darwin  GOARCH=arm64 CGO_ENABLED=1 go build -ldflags "-s -w" -o dist/Swell-Box ./cmd/swellbox
+
+# Linux x64
 GOOS=linux   GOARCH=amd64 CGO_ENABLED=1 go build -ldflags "-s -w" -o dist/Swell-Box ./cmd/swellbox
 ```
 
-> Linux / macOS tray builds need CGO. On Linux install `libgtk-3-dev` and `libayatana-appindicator3-dev`.
+---
 
-### GitHub Actions (recommended)
+## 📄 开源许可证 (License)
 
-| Workflow | Trigger | Output |
-|----------|---------|--------|
-| **CI** | push / PR to `main` | compile check for all 5 targets |
-| **Release** | push tag `v*` | full offline zips + clients for all targets |
+本项目采用 [MIT License](LICENSE) 开源。  
+使用的 sing-box 与 Shoes 内核归各自原作者所有，遵循其对应的开源许可协议。
 
-Create a release:
+---
 
-```bash
-git tag v0.2.4
-git push origin v0.2.4
-```
+## ⚠️ 免责声明 (Disclaimer)
 
-**Release assets (5 files only — offline full packages):**
-
-| File | Contents |
-|------|----------|
-| `Swell-Box-windows-amd64-full.zip` | Win x64 client + `sing-box.exe` |
-| `Swell-Box-windows-arm64-full.zip` | Win ARM64 client + `sing-box.exe` |
-| `Swell-Box-darwin-arm64-full.zip` | macOS Apple Silicon **`.app`** + `sing-box` |
-| `Swell-Box-linux-amd64-full.zip` | Linux x64 + `sing-box` |
-| `Swell-Box-linux-arm64-full.zip` | Linux ARM64 + `sing-box` |
-
-No thin clients or bare binaries are published — only `*-full.zip`.
-
-## Usage
-
-1. Extract the full zip for your platform
-2. Run:
-   - **Windows:** `Swell-Box.exe`
-   - **macOS:** drag `Swell-Box.app` into **Applications**, then open it (menu bar only).  
-     First time: right-click → Open, or `xattr -cr /Applications/Swell-Box.app` if “damaged”.  
-     The core (`sing-box`) is **inside** the `.app`; first launch copies it to `~/.swellbox/bin`. You do **not** need to keep the unzipped folder after installing.  
-     **Updates:** tray → Update core (in-app). Tray → Check app update downloads a new `.app` and replaces the running bundle (then relaunches).
-   - **Linux:** `./Swell-Box`
-3. **Add** → import node / subscription / config
-4. **Start** (menu bar icon)
-5. **Dashboard** for connections / selectors
-
-Custom configs: put `config*.json` under `~/.swellbox/` or use **Import Config File**. Routing in imported files is left as-is.
-
-### macOS: “opened but no internet”
-
-Usually **system proxy is still pointing at `127.0.0.1:7890`** while the core is not running (or a node is dead). Fix:
-
-```bash
-# 1) Turn off leftover system proxy (all services)
-networksetup -listallnetworkservices
-# then for your active interface, e.g. Wi-Fi:
-networksetup -setwebproxystate "Wi-Fi" off
-networksetup -setsecurewebproxystate "Wi-Fi" off
-networksetup -setsocksfirewallproxystate "Wi-Fi" off
-
-# 2) Check whether mixed proxy is listening
-lsof -iTCP:7890 -sTCP:LISTEN
-
-# 3) Core log
-tail -n 80 ~/.swellbox/logs/core.log
-```
-
-In the tray menu:
-
-1. Confirm you **imported a subscription / node** and selected a working node (not only `direct`).
-2. Turn **System Proxy** on → **Start**.
-3. **TUN on macOS:** tray menu → enable TUN → confirm → **Start** → enter Mac password when prompted (authorizes sing-box only). Or keep using **System Proxy** without TUN.
-4. Open **Dashboard** (`http://127.0.0.1:9091/dashboard/`) — if it fails, the core is not up.
-
-## License
-
-MIT — see [LICENSE](LICENSE).
-
-sing-box is GPL-3.0; ship or download the official binary separately (this app can auto-download it).
-
-## Disclaimer
-
-For technical and educational use. Comply with local laws and your network provider’s terms.
+本项目仅供网络技术学习、科研与交流使用。请自觉遵守所在国家和地区的相关法律法规。
