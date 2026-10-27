@@ -276,6 +276,7 @@ func UpdateCoreForEngine(engine, channel string, stopFn func() error) (string, e
 	if err := os.WriteFile(dest, data, 0o755); err != nil {
 		return "", fmt.Errorf("install core: %w", err)
 	}
+	_ = os.Chmod(dest, 0o755)
 	// copy dlls next to binary if present (libcronet)
 	_ = copySidecars(filepath.Dir(extracted), binDir)
 

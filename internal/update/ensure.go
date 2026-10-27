@@ -8,10 +8,14 @@ import (
 	"github.com/swell-app/swellbox/internal/paths"
 )
 
-// CorePresent reports whether the runtime core exists in ~/.swellbox/bin.
-// The zip-side binary alone does not count — it must be seeded into the data dir.
+// CorePresent reports whether the runtime sing-box core exists in ~/.swellbox/bin.
 func CorePresent() bool {
-	name := paths.CoreBinaryName()
+	return CorePresentFor(paths.EngineSingBox)
+}
+
+// CorePresentFor reports whether the specified runtime core exists in ~/.swellbox/bin.
+func CorePresentFor(engine string) bool {
+	name := paths.CoreBinaryNameFor(engine)
 	if binDir, err := paths.BinDir(); err == nil {
 		if st, err := os.Stat(filepath.Join(binDir, name)); err == nil && !st.IsDir() && st.Size() > 0 {
 			return true
@@ -21,22 +25,25 @@ func CorePresent() bool {
 }
 
 // EnsureCore makes sure ~/.swellbox/bin has a sing-box binary:
-//  1. already in data dir
-//  2. seed-copy from full.zip (next to Swell-Box.exe) into data dir
-//  3. download from GitHub into data dir
-//
-// channel: stable or pre (used only for online download).
 func EnsureCore(channel string, onProgress func(string)) (string, error) {
-	if CorePresent() {
-		return installedCoreVersion(), nil
+	return EnsureCoreForEngine(paths.EngineSingBox, channel, onProgress)
+}
+
+// EnsureCoreForEngine makes sure ~/.swellbox/bin has the specified core binary:
+//  1. already in data dir
+//  2. seed-copy from full.zip into data dir
+//  3. download from GitHub into data dir
+func EnsureCoreForEngine(engine, channel string, onProgress func(string)) (string, error) {
+	if CorePresentFor(engine) {
+		return InstalledCoreVersionFor(engine), nil
 	}
 
 	// Seed from offline package next to this app (does not run from that path).
 	if onProgress != nil {
 		onProgress("bundle")
 	}
-	if ok, err := InstallBundledCore(); err == nil && ok && CorePresent() {
-		return installedCoreVersion(), nil
+	if ok, err := InstallBundledCore(); err == nil && ok && CorePresentFor(engine) {
+		return InstalledCoreVersionFor(engine), nil
 	}
 
 	// Online download into data dir
@@ -44,15 +51,15 @@ func EnsureCore(channel string, onProgress func(string)) (string, error) {
 		onProgress("downloading")
 	}
 	if channel == "" {
-		channel = ChannelPre
+		channel = ChannelStable
 	}
-	ver, err := UpdateCore(channel, nil)
+	ver, err := UpdateCoreForEngine(engine, channel, nil)
 	if err != nil {
 		if channel == ChannelPre {
 			if onProgress != nil {
 				onProgress("fallback-stable")
 			}
-			return UpdateCore(ChannelStable, nil)
+			return UpdateCoreForEngine(engine, ChannelStable, nil)
 		}
 		return "", fmt.Errorf("no local core and download failed: %w", err)
 	}

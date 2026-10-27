@@ -642,16 +642,17 @@ func (c *Controller) ensureCoreAsync() {
 }
 
 func (c *Controller) ensureCoreSync() error {
+	engine := c.engine()
 	// 1) install from same folder as Swell-Box.exe (full zip package)
-	if _, err := update.InstallBundledCore(); err == nil && update.CorePresent() {
+	if _, err := update.InstallBundledCore(); err == nil && update.CorePresentFor(engine) {
 		return nil
 	}
-	if update.CorePresent() {
+	if update.CorePresentFor(engine) {
 		return nil
 	}
 	// 2) online download (needs network)
 	notify.Info(paths.AppName, i18n.T("core_missing"))
-	ver, err := update.EnsureCore(c.coreChannel(), nil)
+	ver, err := update.EnsureCoreForEngine(engine, c.coreChannel(), nil)
 	if err != nil {
 		return err
 	}
@@ -1438,11 +1439,9 @@ func (c *Controller) selectConfig(name string) {
 }
 
 func (c *Controller) startProxy() error {
-	// Download core outside the lock (network). Only for sing-box.
-	if c.App == nil || c.App.CoreEngine != paths.EngineShoes {
-		if err := c.ensureCoreSync(); err != nil {
-			return fmt.Errorf("%s%w", i18n.T("core_download_fail"), err)
-		}
+	// Download core outside the lock (network) if missing.
+	if err := c.ensureCoreSync(); err != nil {
+		return fmt.Errorf("%s%w", i18n.T("core_download_fail"), err)
 	}
 
 	// Windows TUN without admin: ask to elevate the whole app (UAC).
