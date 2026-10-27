@@ -20,6 +20,18 @@ Thumbs.db
 # Local / temp
 /tmp/
 *.log
+scratch/
+rule-set/
+out.txt
+test_config.go
+
+# Local user configs & test nodes (NEVER COMMIT)
+*.json
+!configs/config.json
+!internal/seed/config.json
+user_config*
+config.runtime*
 
 # Optional local core cache
 /third_party/sing-box*
+

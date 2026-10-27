@@ -14,18 +14,20 @@ import (
 	"github.com/swell-app/swellbox/internal/paths"
 )
 
-// Manager runs the official sing-box binary as a child process.
+// Manager runs the official sing-box or shoes binary as a child process.
 type Manager struct {
 	mu      sync.Mutex
 	cmd     *exec.Cmd
 	running bool
 	logFile *os.File
 
+	// Engine is "sing-box" or "shoes". Default "sing-box".
+	Engine string
 	// CorePath overrides auto detection when non-empty.
 	CorePath string
 	// WorkDir is passed as sing-box -D (config directory context).
 	WorkDir string
-	// ConfigPath is the runtime config file passed as -c.
+	// ConfigPath is the runtime config file passed as -c or argument.
 	ConfigPath string
 	// NeedPrivileges requests elevated start (macOS TUN: admin password dialog).
 	// When true and the process is not already root/admin, Start may use a
@@ -43,16 +45,18 @@ func (m *Manager) Running() bool {
 	return m.running
 }
 
-// ResolveBinary finds the sing-box executable that will actually run.
-//
-// Single source of truth: ~/.swellbox/bin (Windows: %USERPROFILE%\.swellbox\bin).
-// The copy next to Swell-Box.exe in a full.zip is only a first-run seed —
-// InstallBundledCore / EnsureCore copy it into the data dir; it is never used
-// as a second runtime path (that caused "update said latest, Dashboard old").
-//
-// Order: explicit CorePath (if set and valid) → data-dir bin → PATH (dev only).
+func (m *Manager) engine() string {
+	if m.Engine == paths.EngineShoes {
+		return paths.EngineShoes
+	}
+	return paths.EngineSingBox
+}
+
+// ResolveBinary finds the executable that will actually run for the current engine.
+// Order: explicit CorePath (if set and valid) → data-dir bin → Desktop / bundled seed → PATH.
 func (m *Manager) ResolveBinary() (string, error) {
-	name := paths.CoreBinaryName()
+	eng := m.engine()
+	name := paths.CoreBinaryNameFor(eng)
 
 	if m.CorePath != "" {
 		if st, err := os.Stat(m.CorePath); err == nil && !st.IsDir() && st.Size() > 0 {
@@ -61,30 +65,80 @@ func (m *Manager) ResolveBinary() (string, error) {
 		return "", fmt.Errorf("core_path not found: %s", m.CorePath)
 	}
 
-	// Canonical install location for tray updates and first-run seed.
-	if binDir, err := paths.BinDir(); err == nil {
+	binDir, _ := paths.BinDir()
+	if binDir != "" {
 		candidate := filepath.Join(binDir, name)
 		if st, err := os.Stat(candidate); err == nil && !st.IsDir() && st.Size() > 0 {
 			return candidate, nil
 		}
 	}
 
-	// Dev / manual: PATH only (not the zip-side binary).
+	// For shoes: check Desktop (%USERPROFILE%\Desktop\shoes.exe)
+	if eng == paths.EngineShoes {
+		if home, err := os.UserHomeDir(); err == nil && home != "" {
+			desktopExe := filepath.Join(home, "Desktop", name)
+			if st, err := os.Stat(desktopExe); err == nil && !st.IsDir() && st.Size() > 0 {
+				if binDir != "" {
+					dest := filepath.Join(binDir, name)
+					_ = os.MkdirAll(binDir, 0o755)
+					if err := copyBinary(desktopExe, dest); err == nil {
+						return dest, nil
+					}
+				}
+				return desktopExe, nil
+			}
+		}
+	}
+
+	// Check next to Swell-Box executable
+	if exe, err := os.Executable(); err == nil {
+		dir := filepath.Dir(exe)
+		for _, sub := range []string{name, filepath.Join("bin", name), filepath.Join("core", name)} {
+			cand := filepath.Join(dir, sub)
+			if st, err := os.Stat(cand); err == nil && !st.IsDir() && st.Size() > 0 {
+				if binDir != "" {
+					dest := filepath.Join(binDir, name)
+					_ = os.MkdirAll(binDir, 0o755)
+					if err := copyBinary(cand, dest); err == nil {
+						return dest, nil
+					}
+				}
+				return cand, nil
+			}
+		}
+	}
+
+	// Dev / manual: PATH
 	if p, err := exec.LookPath(name); err == nil {
 		return p, nil
 	}
 	if runtime.GOOS == "windows" {
-		if p, err := exec.LookPath("sing-box"); err == nil {
+		if p, err := exec.LookPath(eng); err == nil {
 			return p, nil
 		}
 	}
 
 	return "", fmt.Errorf(
-		"sing-box binary not found in ~/.swellbox/bin\n"+
-			"Place %s next to Swell-Box once (offline package seeds the data dir), "+
-			"or use tray → Update Core, or set SWELLBOX_CORE",
-		name,
+		"%s binary not found in ~/.swellbox/bin\n"+
+			"Place %s next to Swell-Box or on Desktop, "+
+			"or set SWELLBOX_CORE",
+		eng, name,
 	)
+}
+
+func copyBinary(src, dst string) error {
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+	out, err := os.OpenFile(dst, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o755)
+	if err != nil {
+		return err
+	}
+	defer out.Close()
+	_, err = io.Copy(out, in)
+	return err
 }
 
 func (m *Manager) Start() error {
@@ -94,6 +148,7 @@ func (m *Manager) Start() error {
 		return nil
 	}
 
+	eng := m.engine()
 	bin, err := m.ResolveBinary()
 	if err != nil {
 		m.mu.Unlock()
@@ -102,9 +157,7 @@ func (m *Manager) Start() error {
 	if abs, err := filepath.Abs(bin); err == nil {
 		bin = abs
 	}
-	// Always log which binary is started — users often have both the zip copy
-	// and ~/.swellbox/bin; only one actually runs.
-	log.Printf("starting core: %s", bin)
+	log.Printf("starting core (%s): %s", eng, bin)
 	if m.ConfigPath == "" {
 		m.mu.Unlock()
 		return fmt.Errorf("config path is empty")
@@ -119,8 +172,8 @@ func (m *Manager) Start() error {
 		workDir = filepath.Dir(m.ConfigPath)
 	}
 
-	// Validate config before starting (clearer errors than a silent crash).
-	if err := CheckConfig(bin, m.ConfigPath, workDir); err != nil {
+	// Validate config before starting
+	if err := CheckConfigForEngine(eng, bin, m.ConfigPath, workDir); err != nil {
 		m.mu.Unlock()
 		return fmt.Errorf("config check failed: %w", err)
 	}
@@ -135,11 +188,10 @@ func (m *Manager) Start() error {
 		return err
 	}
 	logPath := filepath.Join(logDir, "core.log")
-	// Prevent unbounded growth: rotate when over maxLogBytes.
 	rotateLogIfNeeded(logPath, maxLogBytes, keepLogBytes)
 
-	// macOS TUN: start sing-box as root via authorization dialog (tray stays user).
-	if m.NeedPrivileges && runtime.GOOS == "darwin" && os.Geteuid() != 0 {
+	// macOS TUN: start sing-box as root via authorization dialog (only for sing-box)
+	if eng == paths.EngineSingBox && m.NeedPrivileges && runtime.GOOS == "darwin" && os.Geteuid() != 0 {
 		return m.startPrivileged(bin, m.ConfigPath, workDir, logPath)
 	}
 
@@ -149,7 +201,12 @@ func (m *Manager) Start() error {
 		return err
 	}
 
-	cmd := exec.Command(bin, "run", "-c", m.ConfigPath, "-D", workDir)
+	var cmd *exec.Cmd
+	if eng == paths.EngineShoes {
+		cmd = exec.Command(bin, "--no-reload", m.ConfigPath)
+	} else {
+		cmd = exec.Command(bin, "run", "-c", m.ConfigPath, "-D", workDir)
+	}
 	cmd.Dir = workDir
 	cmd.Stdout = logFile
 	cmd.Stderr = logFile
@@ -158,7 +215,7 @@ func (m *Manager) Start() error {
 	if err := cmd.Start(); err != nil {
 		_ = logFile.Close()
 		m.mu.Unlock()
-		return fmt.Errorf("start sing-box: %w", err)
+		return fmt.Errorf("start %s: %w", eng, err)
 	}
 	// Windows: put child in Job Object so it dies with Swell-Box (no residual).
 	if cmd.Process != nil {
@@ -194,7 +251,7 @@ func (m *Manager) Start() error {
 	running := m.running
 	m.mu.Unlock()
 	if !running {
-		return fmt.Errorf("sing-box exited immediately; see %s", logPath)
+		return fmt.Errorf("%s exited immediately; see %s", eng, logPath)
 	}
 	return nil
 }

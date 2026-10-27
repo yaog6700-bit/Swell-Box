@@ -25,8 +25,8 @@ func TestListSwitchableNodesOnlyDefaultConfigJSON(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if primary != "" || len(nodes) != 0 {
-		t.Fatalf("non-default name should be empty, got primary=%q nodes=%+v", primary, nodes)
+	if primary != "proxy" || len(nodes) != 1 || nodes[0].Tag != "SG-FREE" {
+		t.Fatalf("expected nodes in non-default config too, got primary=%q nodes=%+v", primary, nodes)
 	}
 
 	// Default config.json + proxy leaves → show.

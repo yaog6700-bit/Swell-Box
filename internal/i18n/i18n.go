@@ -194,6 +194,12 @@ var zh = map[string]string{
 	"lang_switched":     "已切换为中文",
 	"lang_switched_en":  "Switched to English",
 	"no_config":         "（没有 config*.json）",
+	"menu_engine":          "内核引擎",
+	"engine_singbox":       "sing-box (默认)",
+	"engine_shoes":         "shoes (Rust)",
+	"engine_switched":      "已切换为 %s 内核",
+	"shoes_no_tun":         "Shoes 核心在 Windows 下不支持 TUN 模式，已自动切换为系统代理",
+	"shoes_dashboard_hint": "正在打开 Zashboard 面板（兼容 Shoes）…",
 }
 
 var en = map[string]string{
@@ -328,4 +334,10 @@ var en = map[string]string{
 	"lang_switched":     "已切换为中文",
 	"lang_switched_en":  "Switched to English",
 	"no_config":         "(no config*.json)",
+	"menu_engine":          "Core Engine",
+	"engine_singbox":       "sing-box (Default)",
+	"engine_shoes":         "shoes (Rust)",
+	"engine_switched":      "Switched to %s engine",
+	"shoes_no_tun":         "Shoes does not support TUN mode on Windows; switched to system proxy",
+	"shoes_dashboard_hint": "Opening Zashboard (Shoes compatible)…",
 }

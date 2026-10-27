@@ -43,6 +43,9 @@ func main() {
 		log.Fatal("bootstrap: ", err)
 	}
 
+	// Seed bundled cores (sing-box and shoes next to Swell-Box.exe) into ~/.swellbox/bin
+	_, _ = update.InstallBundledCore()
+
 	settings, err := config.LoadAppSettings()
 	if err != nil {
 		log.Fatal("app settings: ", err)

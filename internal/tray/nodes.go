@@ -78,7 +78,7 @@ func (c *Controller) onNodeClick(idx int) {
 	}
 
 	// Prefer live Clash API (no full restart).
-	cli := clashapi.New(clashapi.DefaultAddr)
+	cli := clashapi.NewWithSecret(clashapi.DefaultAddr, c.clashSecret())
 	// 1) Select leaf inside its group (e.g. Singapore urltest → 🚜🇸🇬 -FREE)
 	err := cli.Select(group, tag)
 	if err != nil {
@@ -174,11 +174,8 @@ func (c *Controller) refreshNodeMenu() {
 		primary = "proxy"
 	)
 
-	// Only default config.json uses the 节点 menu; other profiles → Dashboard.
-	homeProfile := c.App != nil && config.IsDefaultConfigName(c.App.ActiveConfig)
-
 	path, err := config.ActiveConfigPath(c.App)
-	if err == nil && homeProfile {
+	if err == nil {
 		p, nodes, cur, err := config.ListSwitchableNodes(path)
 		if err == nil {
 			if p != "" {
@@ -192,11 +189,43 @@ func (c *Controller) refreshNodeMenu() {
 		}
 	}
 
-	// Overlay live "now" from Clash API when running (home profile only).
-	if homeProfile && c.Core != nil && c.Core.Running() && primary != "" {
-		cli := clashapi.New(clashapi.DefaultAddr)
-		if n, _, err := cli.GroupNow(primary); err == nil && n != "" {
-			now = n
+	// Live Clash API synchronization when core is running.
+	if c.Core != nil && c.Core.Running() {
+		cli := clashapi.NewWithSecret(clashapi.DefaultAddr, c.clashSecret())
+		// If static parsing found no nodes (e.g. shoes runtime yaml or dynamic config),
+		// query live Clash API directly!
+		if len(members) == 0 {
+			if proxies, err := cli.Proxies(); err == nil {
+				var selGroup map[string]any
+				selName := "proxy"
+				if g, ok := proxies["proxy"].(map[string]any); ok && g["type"] == "Selector" {
+					selGroup = g
+				} else {
+					for name, gData := range proxies {
+						if gm, ok := gData.(map[string]any); ok && gm["type"] == "Selector" {
+							selGroup = gm
+							selName = name
+							break
+						}
+					}
+				}
+				if selGroup != nil {
+					primary = selName
+					now, _ = selGroup["now"].(string)
+					if allList, ok := selGroup["all"].([]any); ok {
+						for _, item := range allList {
+							if s, ok := item.(string); ok && s != "" && s != "DIRECT" && s != "REJECT" {
+								members = append(members, s)
+								groups = append(groups, primary)
+							}
+						}
+					}
+				}
+			}
+		} else if primary != "" {
+			if n, _, err := cli.GroupNow(primary); err == nil && n != "" {
+				now = n
+			}
 		}
 	}
 
@@ -204,11 +233,7 @@ func (c *Controller) refreshNodeMenu() {
 
 	if len(members) == 0 {
 		if c.mNodesEmpty != nil {
-			emptyMsg := i18n.T("nodes_empty")
-			if !homeProfile {
-				emptyMsg = i18n.T("nodes_use_dashboard")
-			}
-			c.mNodesEmpty.SetTitle(emptyMsg)
+			c.mNodesEmpty.SetTitle(i18n.T("nodes_empty"))
 			c.mNodesEmpty.Show()
 		}
 		for i, mi := range c.nodeSlots {

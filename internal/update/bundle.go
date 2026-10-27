@@ -11,7 +11,7 @@ import (
 )
 
 // InstallBundledCore seeds ~/.swellbox/bin from the offline full.zip layout
-// (sing-box next to Swell-Box.exe) when the data-dir core is missing.
+// (sing-box and shoes next to Swell-Box.exe) when data-dir cores are missing.
 //
 // After a successful seed (or if data-dir already has a core), the zip-side
 // seed files are removed — runtime only uses ~/.swellbox/bin.
@@ -19,22 +19,33 @@ import (
 // Layout supported next to Swell-Box.exe:
 //
 //	./sing-box.exe
+//	./shoes.exe
 //	./libcronet.dll
 //	./bin/sing-box.exe
+//	./bin/shoes.exe
 func InstallBundledCore() (bool, error) {
-	name := paths.CoreBinaryName()
+	installedAny := false
+	for _, engine := range []string{paths.EngineSingBox, paths.EngineShoes} {
+		if ok, err := installBundledEngine(engine); err == nil && ok {
+			installedAny = true
+		}
+	}
+	return installedAny, nil
+}
+
+func installBundledEngine(engine string) (bool, error) {
+	name := paths.CoreBinaryNameFor(engine)
 	binDir, err := paths.BinDir()
 	if err != nil {
 		return false, err
 	}
 	dest := filepath.Join(binDir, name)
 	if st, err := os.Stat(dest); err == nil && !st.IsDir() && st.Size() > 0 {
-		// Data dir already ready — drop leftover seed next to the app.
-		removeBundledSeed()
+		removeBundledSeedFor(engine)
 		return false, nil
 	}
 
-	src, err := findBundledCore()
+	src, err := findBundledBinary(name)
 	if err != nil {
 		return false, err
 	}
@@ -44,51 +55,60 @@ func InstallBundledCore() (bool, error) {
 	if err := copyFile(src, dest); err != nil {
 		return false, err
 	}
-	// copy dlls from same directory as source
 	srcDir := filepath.Dir(src)
 	_ = copySidecars(srcDir, binDir)
 
-	// Verify dest then remove seed so users do not keep two kernels.
 	if st, err := os.Stat(dest); err == nil && !st.IsDir() && st.Size() > 1024 {
-		removeSeedAt(src)
+		removeSeedAtFor(src, engine)
 	}
 	return true, nil
 }
 
-// removeBundledSeed deletes the zip-side sing-box (+ sidecars) when present.
+// removeBundledSeed deletes the zip-side cores (+ sidecars) when present.
 func removeBundledSeed() {
-	src, err := findBundledCore()
+	removeBundledSeedFor(paths.EngineSingBox)
+	removeBundledSeedFor(paths.EngineShoes)
+}
+
+func removeBundledSeedFor(engine string) {
+	name := paths.CoreBinaryNameFor(engine)
+	src, err := findBundledBinary(name)
 	if err != nil {
 		return
 	}
-	removeSeedAt(src)
+	removeSeedAtFor(src, engine)
 }
 
 func removeSeedAt(src string) {
+	removeSeedAtFor(src, paths.EngineSingBox)
+}
+
+func removeSeedAtFor(src string, engine string) {
 	if src == "" {
 		return
 	}
-	// Never delete the data-dir binary.
+	name := paths.CoreBinaryNameFor(engine)
 	if binDir, err := paths.BinDir(); err == nil {
-		dest := filepath.Join(binDir, paths.CoreBinaryName())
+		dest := filepath.Join(binDir, name)
 		if sameFilePath(src, dest) {
 			return
 		}
 	}
 	srcDir := filepath.Dir(src)
 	_ = os.Remove(src)
-	// Sidecar DLLs that ship with windows full packages.
-	entries, err := os.ReadDir(srcDir)
-	if err != nil {
-		return
-	}
-	for _, e := range entries {
-		if e.IsDir() {
-			continue
+	if engine == paths.EngineSingBox {
+		entries, err := os.ReadDir(srcDir)
+		if err != nil {
+			return
 		}
-		n := strings.ToLower(e.Name())
-		if strings.HasSuffix(n, ".dll") && (strings.Contains(n, "cronet") || strings.Contains(n, "sing")) {
-			_ = os.Remove(filepath.Join(srcDir, e.Name()))
+		for _, e := range entries {
+			if e.IsDir() {
+				continue
+			}
+			n := strings.ToLower(e.Name())
+			if strings.HasSuffix(n, ".dll") && (strings.Contains(n, "cronet") || strings.Contains(n, "sing")) {
+				_ = os.Remove(filepath.Join(srcDir, e.Name()))
+			}
 		}
 	}
 }
@@ -103,7 +123,10 @@ func sameFilePath(a, b string) bool {
 }
 
 func findBundledCore() (string, error) {
-	name := paths.CoreBinaryName()
+	return findBundledBinary(paths.CoreBinaryName())
+}
+
+func findBundledBinary(name string) (string, error) {
 	exe, err := os.Executable()
 	if err != nil {
 		return "", err
@@ -112,16 +135,12 @@ func findBundledCore() (string, error) {
 		exe = r
 	}
 	dir := filepath.Dir(exe)
-	// Layouts:
-	//   ./sing-box[.exe] next to Swell-Box
-	//   ./bin/sing-box , ./core/sing-box
-	//   macOS .app: Contents/MacOS/Swell-Box → also Contents/Resources, and folder next to .app
 	candidates := []string{
 		filepath.Join(dir, name),
 		filepath.Join(dir, "bin", name),
 		filepath.Join(dir, "core", name),
 		filepath.Join(dir, "..", "Resources", name),
-		filepath.Join(dir, "..", "..", "..", name), // next to Foo.app
+		filepath.Join(dir, "..", "..", "..", name),
 	}
 	for _, p := range candidates {
 		p = filepath.Clean(p)

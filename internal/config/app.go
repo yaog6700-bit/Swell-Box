@@ -30,6 +30,12 @@ type AppSettings struct {
 	CoreChannel string `json:"core_channel"`
 	// Language is "zh" or "en". Default zh.
 	Language string `json:"language"`
+	// CoreEngine is "sing-box" or "shoes". Default "sing-box".
+	CoreEngine string `json:"core_engine,omitempty"`
+	// ShoesConfig is an optional path to a custom shoes YAML config file.
+	ShoesConfig string `json:"shoes_config,omitempty"`
+	// ShoesSecret is the controller secret for shoes Clash API (default: "swellbox").
+	ShoesSecret string `json:"shoes_secret,omitempty"`
 }
 
 // DefaultConfigFile is the Swell-Box home profile used by the tray「节点」menu
@@ -49,6 +55,8 @@ func DefaultAppSettings() *AppSettings {
 		// pre: official dashboard (api service) needs 1.14+ for now
 		CoreChannel: "pre",
 		Language:    "zh",
+		CoreEngine:  paths.EngineSingBox,
+		ShoesSecret: "swellbox",
 		// System proxy on by default when user starts (can turn off in tray)
 		SystemProxy: true,
 	}
@@ -83,6 +91,12 @@ func LoadAppSettings() (*AppSettings, error) {
 	}
 	if s.CoreChannel != "stable" && s.CoreChannel != "pre" {
 		s.CoreChannel = "pre"
+	}
+	if s.CoreEngine != paths.EngineShoes && s.CoreEngine != paths.EngineSingBox {
+		s.CoreEngine = paths.EngineSingBox
+	}
+	if s.ShoesSecret == "" {
+		s.ShoesSecret = "swellbox"
 	}
 	return s, nil
 }

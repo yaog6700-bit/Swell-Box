@@ -3,7 +3,6 @@ package config
 import (
 	"encoding/json"
 	"os"
-	"path/filepath"
 	"strings"
 )
 
@@ -62,13 +61,9 @@ func ListSelectors(configPath string) ([]SelectorInfo, error) {
 //
 // Product rule: only the default profile config.json is managed here
 // (import node / subscription + selector "proxy"). Any other active file
-// (imported full templates) returns empty — switch nodes in Dashboard.
-// Nested groups under "proxy" are NOT expanded into this menu.
+// ListSwitchableNodes returns leaf proxies for the tray「节点」menu.
+// Supports both default config.json and custom/imported configuration profiles.
 func ListSwitchableNodes(configPath string) (primary string, nodes []SwitchableNode, current string, err error) {
-	// Enforce home profile only (by file name).
-	if base := filepath.Base(configPath); !IsDefaultConfigName(base) {
-		return "", nil, "", nil
-	}
 	raw, err := os.ReadFile(configPath)
 	if err != nil {
 		return "", nil, "", err
@@ -85,6 +80,7 @@ func ListSwitchableNodes(configPath string) (primary string, nodes []SwitchableN
 		Default string
 	}
 	byTag := map[string]obInfo{}
+	var firstSelector string
 	for _, item := range outbounds {
 		m, ok := item.(map[string]any)
 		if !ok {
@@ -99,15 +95,28 @@ func ListSwitchableNodes(configPath string) (primary string, nodes []SwitchableN
 		if t == "selector" || t == "urltest" {
 			info.Members = toStringSlice(m["outbounds"])
 			info.Default, _ = m["default"].(string)
+			if firstSelector == "" && t == "selector" {
+				firstSelector = tag
+			}
 		}
 		byTag[tag] = info
 	}
 
-	// Only the canonical Swell-Box group.
-	const proxyTag = "proxy"
+	proxyTag := "proxy"
+	if _, ok := byTag[proxyTag]; !ok {
+		for tag, info := range byTag {
+			if strings.EqualFold(tag, "proxy") && info.Type == "selector" {
+				proxyTag = tag
+				break
+			}
+		}
+		if _, ok := byTag[proxyTag]; !ok && firstSelector != "" {
+			proxyTag = firstSelector
+		}
+	}
+
 	p, ok := byTag[proxyTag]
 	if !ok || p.Type != "selector" {
-		// Imported full template or no proxy group → tray node list stays empty.
 		return "", nil, "", nil
 	}
 	primary = proxyTag

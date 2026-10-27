@@ -10,6 +10,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -46,27 +47,45 @@ type CoreInfo struct {
 	Prerelease bool
 }
 
+// Repositories for core engines.
+const (
+	SingBoxRepo = "SagerNet/sing-box"
+	ShoesRepo   = "mateo-ki/shoes"
+)
+
 // CheckCore queries GitHub for sing-box matching this OS/arch.
 // channel: ChannelStable or ChannelPre.
 func CheckCore(channel string) (*CoreInfo, error) {
+	return CheckCoreForEngine(paths.EngineSingBox, channel)
+}
+
+// CheckCoreForEngine queries GitHub for the specified engine matching this OS/arch.
+func CheckCoreForEngine(engine, channel string) (*CoreInfo, error) {
 	if channel != ChannelPre {
 		channel = ChannelStable
 	}
-	info := &CoreInfo{Installed: installedCoreVersion(), Channel: channel}
+	info := &CoreInfo{Installed: InstalledCoreVersionFor(engine), Channel: channel}
+
+	repo := SingBoxRepo
+	picker := pickAsset
+	if engine == paths.EngineShoes {
+		repo = ShoesRepo
+		picker = pickShoesAsset
+	}
 
 	var rel *ghRelease
 	var err error
 	if channel == ChannelPre {
-		rel, err = fetchNewestRelease(true)
+		rel, err = fetchNewestReleaseForRepo(repo, true, picker)
 	} else {
-		rel, err = fetchJSON("https://api.github.com/repos/SagerNet/sing-box/releases/latest")
+		rel, err = fetchJSON(fmt.Sprintf("https://api.github.com/repos/%s/releases/latest", repo))
 	}
 	if err != nil {
 		return info, err
 	}
 	info.Latest = strings.TrimPrefix(rel.TagName, "v")
 	info.Prerelease = rel.Prerelease
-	name, url, err := pickAsset(rel.Assets)
+	name, url, err := picker(rel.Assets)
 	if err != nil {
 		return info, err
 	}
@@ -75,11 +94,16 @@ func CheckCore(channel string) (*CoreInfo, error) {
 	return info, nil
 }
 
-// fetchNewestRelease returns the newest non-draft release.
+// fetchNewestRelease returns the newest non-draft release for sing-box.
+func fetchNewestRelease(allowPre bool) (*ghRelease, error) {
+	return fetchNewestReleaseForRepo(SingBoxRepo, allowPre, pickAsset)
+}
+
+// fetchNewestReleaseForRepo returns the newest non-draft release for repo.
 // If allowPre is false, skips prereleases (same idea as /latest).
 // If allowPre is true, takes the first list entry that has a platform asset (alpha/rc ok).
-func fetchNewestRelease(allowPre bool) (*ghRelease, error) {
-	list, err := fetchJSONList("https://api.github.com/repos/SagerNet/sing-box/releases?per_page=20")
+func fetchNewestReleaseForRepo(repo string, allowPre bool, picker func([]ghAsset) (string, string, error)) (*ghRelease, error) {
+	list, err := fetchJSONList(fmt.Sprintf("https://api.github.com/repos/%s/releases?per_page=20", repo))
 	if err != nil {
 		return nil, err
 	}
@@ -91,22 +115,70 @@ func fetchNewestRelease(allowPre bool) (*ghRelease, error) {
 		if !allowPre && r.Prerelease {
 			continue
 		}
-		if _, _, err := pickAsset(r.Assets); err != nil {
+		if _, _, err := picker(r.Assets); err != nil {
 			continue
 		}
 		return r, nil
 	}
-	return nil, fmt.Errorf("no suitable sing-box release found")
+	return nil, fmt.Errorf("no suitable %s release found", repo)
 }
 
 // InstalledCoreVersion runs `sing-box version` on the binary that Start() uses
 // (~/.swellbox/bin first). Empty if no core is found.
 func InstalledCoreVersion() string {
+	return InstalledCoreVersionFor(paths.EngineSingBox)
+}
+
+// InstalledCoreVersionFor returns the installed version of the specified engine.
+func InstalledCoreVersionFor(engine string) string {
+	if engine == paths.EngineShoes {
+		bin, err := resolveShoesBin()
+		if err != nil {
+			return ""
+		}
+		out, err := runCmd(bin, "version")
+		if err != nil {
+			return ""
+		}
+		fields := strings.Fields(strings.TrimSpace(out))
+		if len(fields) > 0 {
+			return fields[len(fields)-1]
+		}
+		return strings.TrimSpace(out)
+	}
 	return installedCoreVersion()
 }
 
-// ResolvedCorePath returns the absolute path of the core binary that will run.
+func resolveShoesBin() (string, error) {
+	name := paths.CoreBinaryNameFor(paths.EngineShoes)
+	if binDir, err := paths.BinDir(); err == nil {
+		p := filepath.Join(binDir, name)
+		if st, err := os.Stat(p); err == nil && !st.IsDir() && st.Size() > 0 {
+			return p, nil
+		}
+	}
+	if home, err := os.UserHomeDir(); err == nil && home != "" {
+		p := filepath.Join(home, "Desktop", name)
+		if st, err := os.Stat(p); err == nil && !st.IsDir() && st.Size() > 0 {
+			return p, nil
+		}
+	}
+	if p, err := exec.LookPath(name); err == nil {
+		return p, nil
+	}
+	return "", fmt.Errorf("shoes binary not found")
+}
+
+// ResolvedCorePath returns the absolute path of the sing-box core binary.
 func ResolvedCorePath() (string, error) {
+	return ResolvedCorePathFor(paths.EngineSingBox)
+}
+
+// ResolvedCorePathFor returns the absolute path of the specified core engine binary.
+func ResolvedCorePathFor(engine string) (string, error) {
+	if engine == paths.EngineShoes {
+		return resolveShoesBin()
+	}
 	return resolveCoreBin()
 }
 
@@ -151,7 +223,12 @@ func resolveCoreBin() (string, error) {
 // only called right before replacing the on-disk binary (which may be locked while running).
 // stopFn may be nil. Temp archive under os.TempDir is always removed via defer.
 func UpdateCore(channel string, stopFn func() error) (string, error) {
-	info, err := CheckCore(channel)
+	return UpdateCoreForEngine(paths.EngineSingBox, channel, stopFn)
+}
+
+// UpdateCoreForEngine downloads the specified engine for the given channel and installs into ~/.swellbox/bin.
+func UpdateCoreForEngine(engine, channel string, stopFn func() error) (string, error) {
+	info, err := CheckCoreForEngine(engine, channel)
 	if err != nil {
 		return "", err
 	}
@@ -178,7 +255,7 @@ func UpdateCore(channel string, stopFn func() error) (string, error) {
 	if err := downloadFile(info.AssetURL, archivePath); err != nil {
 		return "", err
 	}
-	extracted, err := extractCoreBinary(archivePath, tmpDir)
+	extracted, err := extractCoreBinaryForEngine(archivePath, tmpDir, engine)
 	if err != nil {
 		return "", err
 	}
@@ -190,7 +267,7 @@ func UpdateCore(channel string, stopFn func() error) (string, error) {
 	}
 
 	// 3) Install into data dir; Windows may need remove first if the file was locked.
-	dest := filepath.Join(binDir, paths.CoreBinaryName())
+	dest := filepath.Join(binDir, paths.CoreBinaryNameFor(engine))
 	_ = os.Remove(dest)
 	data, err := os.ReadFile(extracted)
 	if err != nil {
@@ -238,9 +315,44 @@ func pickAsset(assets []ghAsset) (name, url string, err error) {
 	return "", "", fmt.Errorf("no release asset for %s/%s", goos, goarch)
 }
 
+func pickShoesAsset(assets []ghAsset) (name, url string, err error) {
+	goos := runtime.GOOS
+	goarch := runtime.GOARCH
+
+	var targetMatch string
+	switch {
+	case goos == "windows" && goarch == "amd64":
+		targetMatch = "x86_64-pc-windows"
+	case goos == "windows" && goarch == "arm64":
+		targetMatch = "aarch64-pc-windows"
+	case goos == "linux" && goarch == "amd64":
+		targetMatch = "x86_64-unknown-linux"
+	case goos == "linux" && goarch == "arm64":
+		targetMatch = "aarch64-unknown-linux"
+	case goos == "darwin" && goarch == "amd64":
+		targetMatch = "x86_64-apple-darwin"
+	case goos == "darwin" && goarch == "arm64":
+		targetMatch = "aarch64-apple-darwin"
+	default:
+		return "", "", fmt.Errorf("no shoes build for %s/%s", goos, goarch)
+	}
+
+	for _, a := range assets {
+		n := strings.ToLower(a.Name)
+		if strings.Contains(n, targetMatch) && (strings.HasSuffix(n, ".zip") || strings.HasSuffix(n, ".tar.gz") || strings.HasSuffix(n, ".tgz")) {
+			return a.Name, a.BrowserDownloadURL, nil
+		}
+	}
+	return "", "", fmt.Errorf("no shoes release asset found for %s (%s/%s)", targetMatch, goos, goarch)
+}
+
 func extractCoreBinary(archive, destDir string) (string, error) {
+	return extractCoreBinaryForEngine(archive, destDir, paths.EngineSingBox)
+}
+
+func extractCoreBinaryForEngine(archive, destDir, engine string) (string, error) {
 	lower := strings.ToLower(archive)
-	wantName := paths.CoreBinaryName()
+	wantName := paths.CoreBinaryNameFor(engine)
 	if strings.HasSuffix(lower, ".zip") {
 		return extractZipBin(archive, destDir, wantName)
 	}

@@ -16,6 +16,7 @@ import (
 	"github.com/swell-app/swellbox/internal/autostart"
 	"github.com/swell-app/swellbox/internal/config"
 	"github.com/swell-app/swellbox/internal/core"
+	"github.com/swell-app/swellbox/internal/dashboard"
 	"github.com/swell-app/swellbox/internal/i18n"
 	"github.com/swell-app/swellbox/internal/notify"
 	"github.com/swell-app/swellbox/internal/paths"
@@ -60,6 +61,9 @@ type Controller struct {
 	mAutoProxy     *systray.MenuItem
 	mSysProxy      *systray.MenuItem
 	mTunMode       *systray.MenuItem
+	mEngine        *systray.MenuItem
+	mEngineSingBox *systray.MenuItem
+	mEngineShoes   *systray.MenuItem
 	mConfigs       *systray.MenuItem
 	mOpenDir       *systray.MenuItem
 	mOpenLog       *systray.MenuItem
@@ -164,6 +168,13 @@ func (c *Controller) onReady() {
 	sysProxyChecked := c.App != nil && c.App.SystemProxy && !c.App.TunMode
 	c.mSysProxy = c.mSettings.AddSubMenuItemCheckbox(i18n.T("system_proxy"), "", sysProxyChecked)
 	c.mTunMode = c.mSettings.AddSubMenuItemCheckbox(i18n.T("tun_mode"), "", c.App != nil && c.App.TunMode)
+
+	// 内核引擎 (sing-box / shoes)
+	c.mEngine = c.mSettings.AddSubMenuItem(i18n.T("menu_engine"), "")
+	isShoes := c.App != nil && c.App.CoreEngine == paths.EngineShoes
+	c.mEngineSingBox = c.mEngine.AddSubMenuItemCheckbox(i18n.T("engine_singbox"), "", !isShoes)
+	c.mEngineShoes = c.mEngine.AddSubMenuItemCheckbox(i18n.T("engine_shoes"), "", isShoes)
+
 	c.mLang = c.mSettings.AddSubMenuItem(i18n.T("language"), "")
 	c.mLangZH = c.mLang.AddSubMenuItemCheckbox(i18n.T("lang_zh"), "", i18n.Get() == i18n.ZH)
 	c.mLangEN = c.mLang.AddSubMenuItemCheckbox(i18n.T("lang_en"), "", i18n.Get() == i18n.EN)
@@ -282,6 +293,10 @@ func (c *Controller) loop() {
 			go c.doUpdateGeo()
 		case <-c.mUpdateApp.ClickedCh:
 			go c.doCheckApp()
+		case <-c.mEngineSingBox.ClickedCh:
+			c.switchEngine(paths.EngineSingBox)
+		case <-c.mEngineShoes.ClickedCh:
+			c.switchEngine(paths.EngineShoes)
 		case <-c.mLangZH.ClickedCh:
 			c.switchLang(i18n.ZH)
 		case <-c.mLangEN.ClickedCh:
@@ -291,14 +306,19 @@ func (c *Controller) loop() {
 			c.mu.Lock()
 			hasUp, latest := c.appHasUpdate, c.appLatestVer
 			c.mu.Unlock()
-			coreVer := update.InstalledCoreVersion()
+			eng := paths.EngineSingBox
+			if c.App != nil && c.App.CoreEngine != "" {
+				eng = c.App.CoreEngine
+			}
+			coreVer := update.InstalledCoreVersionFor(eng)
 			if coreVer == "" {
 				coreVer = i18n.T("core_ver_unknown")
 			}
+			coreInfo := fmt.Sprintf("%s (%s)", coreVer, eng)
 			if hasUp && latest != "" {
-				notify.Info(paths.AppName, i18n.TF("about_ver_update_core", update.AppVersion, latest, coreVer))
+				notify.Info(paths.AppName, i18n.TF("about_ver_update_core", update.AppVersion, latest, coreInfo))
 			} else {
-				notify.Info(paths.AppName, i18n.TF("about_ver_core", update.AppVersion, coreVer))
+				notify.Info(paths.AppName, i18n.TF("about_ver_core", update.AppVersion, coreInfo))
 			}
 			aboutURL := "https://github.com/yaog6700-bit/Swell-Box"
 			if update.AppReleaseRepo != "" {
@@ -448,6 +468,13 @@ func (c *Controller) toggleTunMode() {
 		return
 	}
 	want := !c.App.TunMode
+	if want && c.App.CoreEngine == paths.EngineShoes {
+		if c.mTunMode != nil {
+			c.mTunMode.Uncheck()
+		}
+		notify.Info(paths.AppName, i18n.T("shoes_no_tun"))
+		return
+	}
 
 	// Enabling TUN without admin/root privileges.
 	if want && !app.IsElevated() {
@@ -568,7 +595,11 @@ func (c *Controller) proxyAddr() string {
 // Callers should run InstallBundledCore first so a full.zip can seed bin/.
 // app.json core_path is only used when data-dir is empty (advanced override).
 func preferredCorePath(settings *config.AppSettings) string {
-	name := paths.CoreBinaryName()
+	engine := paths.EngineSingBox
+	if settings != nil && settings.CoreEngine != "" {
+		engine = settings.CoreEngine
+	}
+	name := paths.CoreBinaryNameFor(engine)
 	if binDir, err := paths.BinDir(); err == nil {
 		p := filepath.Join(binDir, name)
 		if st, err := os.Stat(p); err == nil && !st.IsDir() && st.Size() > 0 {
@@ -578,7 +609,7 @@ func preferredCorePath(settings *config.AppSettings) string {
 			return p
 		}
 	}
-	if settings != nil && strings.TrimSpace(settings.CorePath) != "" {
+	if settings != nil && strings.TrimSpace(settings.CorePath) != "" && engine == paths.EngineSingBox {
 		return settings.CorePath
 	}
 	return ""
@@ -653,11 +684,20 @@ func (c *Controller) shutdown() {
 // openDashboard opens the official sing-box dashboard in the browser.
 // The API only listens while the core is running — start it first if needed.
 func (c *Controller) openDashboard() {
-	port := paths.DefaultPort
-	if c.App != nil && c.App.DashboardPort > 0 {
-		port = c.App.DashboardPort
+	var url string
+	if c.App != nil && c.App.CoreEngine == paths.EngineShoes {
+		secret := c.App.ShoesSecret
+		if secret == "" {
+			secret = "swellbox"
+		}
+		url = dashboard.LocalDashboardURL(9090, secret)
+	} else {
+		port := paths.DefaultPort
+		if c.App != nil && c.App.DashboardPort > 0 {
+			port = c.App.DashboardPort
+		}
+		url = paths.DashboardURL(port)
 	}
-	url := paths.DashboardURL(port)
 
 	if c.Core == nil || !c.Core.Running() {
 		notify.Info(paths.AppName, i18n.T("dashboard_starting"))
@@ -946,7 +986,8 @@ func (c *Controller) silentCheckAppUpdate() {
 
 func (c *Controller) doUpdateCore(channel string) {
 	notify.Info(paths.AppName, i18n.T("upd_checking"))
-	info, err := update.CheckCore(channel)
+	engine := c.engine()
+	info, err := update.CheckCoreForEngine(engine, channel)
 	if err != nil {
 		notify.Error(paths.AppName, i18n.T("upd_core_fail")+err.Error())
 		return
@@ -959,14 +1000,15 @@ func (c *Controller) doUpdateCore(channel string) {
 	if info.Latest != "" && cur == info.Latest {
 		// Show path so user can confirm which binary is considered "installed".
 		msg := fmt.Sprintf(i18n.T("upd_core_latest"), cur)
-		if p, err := update.ResolvedCorePath(); err == nil && p != "" {
+		if p, err := update.ResolvedCorePathFor(engine); err == nil && p != "" {
 			msg = msg + "\n" + p
 		}
 		notify.Info(paths.AppName, msg)
 		return
 	}
 	notify.Info(paths.AppName, fmt.Sprintf(i18n.T("upd_core_avail"), info.Latest, cur))
-	ver, err := update.UpdateCore(channel, func() error {
+	wasRunning := c.Core != nil && c.Core.Running()
+	ver, err := update.UpdateCoreForEngine(engine, channel, func() error {
 		return c.stopProxy()
 	})
 	if err != nil {
@@ -976,12 +1018,17 @@ func (c *Controller) doUpdateCore(channel string) {
 	// Point settings at the data-dir binary so a later start cannot fall back
 	// to the older copy shipped next to Swell-Box.exe.
 	if c.App != nil {
-		if p, err := update.ResolvedCorePath(); err == nil && p != "" {
-			c.App.CorePath = p
+		if p, err := update.ResolvedCorePathFor(engine); err == nil && p != "" {
+			if engine == paths.EngineSingBox {
+				c.App.CorePath = p
+			}
 			_ = config.SaveAppSettings(c.App)
 		}
 	}
 	notify.Info(paths.AppName, fmt.Sprintf(i18n.T("upd_core_ok"), ver))
+	if wasRunning {
+		_ = c.startProxy()
+	}
 }
 
 func (c *Controller) doUpdateGeo() {
@@ -1116,6 +1163,9 @@ func (c *Controller) applyMenuLanguage() {
 	set(c.mAutoProxy, "auto_proxy")
 	set(c.mSysProxy, "system_proxy")
 	set(c.mTunMode, "tun_mode")
+	set(c.mEngine, "menu_engine")
+	set(c.mEngineSingBox, "engine_singbox")
+	set(c.mEngineShoes, "engine_shoes")
 	set(c.mLang, "language")
 	set(c.mLangZH, "lang_zh")
 	set(c.mLangEN, "lang_en")
@@ -1388,14 +1438,16 @@ func (c *Controller) selectConfig(name string) {
 }
 
 func (c *Controller) startProxy() error {
-	// Download core outside the lock (network).
-	if err := c.ensureCoreSync(); err != nil {
-		return fmt.Errorf("%s%w", i18n.T("core_download_fail"), err)
+	// Download core outside the lock (network). Only for sing-box.
+	if c.App == nil || c.App.CoreEngine != paths.EngineShoes {
+		if err := c.ensureCoreSync(); err != nil {
+			return fmt.Errorf("%s%w", i18n.T("core_download_fail"), err)
+		}
 	}
 
 	// Windows TUN without admin: ask to elevate the whole app (UAC).
 	// macOS TUN: core starts with an authorization dialog (NeedPrivileges).
-	if c.App != nil && c.App.TunMode && !app.IsElevated() && runtime.GOOS == "windows" {
+	if c.App != nil && c.App.CoreEngine != paths.EngineShoes && c.App.TunMode && !app.IsElevated() && runtime.GOOS == "windows" {
 		if app.ConfirmYesNo(i18n.T("tun_elevate_title"), i18n.T("tun_elevate_body")) {
 			c.elevateAndExit()
 			return fmt.Errorf("%s", i18n.T("tun_need_admin"))
@@ -1418,9 +1470,26 @@ func (c *Controller) startProxy() error {
 	if err != nil {
 		return err
 	}
-	tunMode := c.App != nil && c.App.TunMode
-	if err := config.PrepareRuntimeConfig(userCfg, runtimePath, c.App.DashboardPort, tunMode); err != nil {
-		return err
+
+	tunMode := c.App != nil && c.App.TunMode && c.App.CoreEngine != paths.EngineShoes
+	c.Core.Engine = paths.EngineSingBox
+	if c.App != nil && c.App.CoreEngine != "" {
+		c.Core.Engine = c.App.CoreEngine
+	}
+
+	if c.Core.Engine == paths.EngineShoes {
+		runtimePath = filepath.Join(filepath.Dir(runtimePath), "config.runtime.shoes.yaml")
+		secret := c.App.ShoesSecret
+		if secret == "" {
+			secret = "swellbox"
+		}
+		if err := config.PrepareRuntimeShoesConfig(userCfg, runtimePath, c.App.ShoesConfig, 9090, 7890, secret); err != nil {
+			return err
+		}
+	} else {
+		if err := config.PrepareRuntimeConfig(userCfg, runtimePath, c.App.DashboardPort, tunMode); err != nil {
+			return err
+		}
 	}
 
 	home, err := paths.HomeDir()
@@ -1428,20 +1497,17 @@ func (c *Controller) startProxy() error {
 		return err
 	}
 
-	// Always prefer ~/.swellbox/bin when present — that is where "Update Core"
-	// installs. Do not keep using the sing-box next to Swell-Box.exe from the zip.
 	c.Core.CorePath = preferredCorePath(c.App)
 	c.Core.ConfigPath = runtimePath
 	c.Core.WorkDir = home
-	// macOS: elevate only the core process for TUN (password prompt once at start).
-	c.Core.NeedPrivileges = tunMode && !app.IsElevated() && runtime.GOOS == "darwin"
+	c.Core.NeedPrivileges = tunMode && !app.IsElevated() && runtime.GOOS == "darwin" && c.Core.Engine == paths.EngineSingBox
 
 	if err := c.Core.Start(); err != nil {
 		return err
 	}
 	c.setStatus(true, "")
 	// System proxy after core is up (skip when TUN is capturing traffic)
-	if c.App != nil && c.App.SystemProxy && !c.App.TunMode {
+	if c.App != nil && c.App.SystemProxy && (c.Core.Engine == paths.EngineShoes || !c.App.TunMode) {
 		_ = sysproxy.Enable(c.proxyAddr())
 	}
 	// Allow Clash API a moment then refresh node list
@@ -1450,6 +1516,78 @@ func (c *Controller) startProxy() error {
 		c.refreshNodeMenu()
 	}()
 	return nil
+}
+
+func (c *Controller) switchEngine(eng string) {
+	if c.App == nil {
+		return
+	}
+	if c.App.CoreEngine == eng {
+		return
+	}
+	c.App.CoreEngine = eng
+	_ = config.SaveAppSettings(c.App)
+
+	if eng == paths.EngineShoes {
+		if c.mEngineShoes != nil {
+			c.mEngineShoes.Check()
+		}
+		if c.mEngineSingBox != nil {
+			c.mEngineSingBox.Uncheck()
+		}
+		// Shoes does not support TUN on Windows
+		if c.App.TunMode {
+			c.App.TunMode = false
+			c.App.SystemProxy = true
+			if c.mTunMode != nil {
+				c.mTunMode.Uncheck()
+			}
+			if c.mSysProxy != nil {
+				c.mSysProxy.Check()
+			}
+			_ = config.SaveAppSettings(c.App)
+			notify.Info(paths.AppName, i18n.T("shoes_no_tun"))
+		}
+	} else {
+		if c.mEngineSingBox != nil {
+			c.mEngineSingBox.Check()
+		}
+		if c.mEngineShoes != nil {
+			c.mEngineShoes.Uncheck()
+		}
+	}
+
+	notify.Info(paths.AppName, i18n.TF("engine_switched", eng))
+
+	if c.Core != nil && c.Core.Running() {
+		go func() {
+			notify.Info(paths.AppName, i18n.T("restarting"))
+			_ = c.stopProxy()
+			if err := c.startProxy(); err != nil {
+				c.setStatus(false, err.Error())
+				notify.Error(paths.AppName, i18n.T("restart_failed")+err.Error())
+			} else {
+				notify.Info(paths.AppName, i18n.T("restarted"))
+			}
+		}()
+	}
+}
+
+func (c *Controller) engine() string {
+	if c.App != nil && c.App.CoreEngine == paths.EngineShoes {
+		return paths.EngineShoes
+	}
+	return paths.EngineSingBox
+}
+
+func (c *Controller) clashSecret() string {
+	if c.App != nil && c.App.CoreEngine == paths.EngineShoes {
+		if c.App.ShoesSecret != "" {
+			return c.App.ShoesSecret
+		}
+		return "swellbox"
+	}
+	return ""
 }
 
 func (c *Controller) stopProxy() error {

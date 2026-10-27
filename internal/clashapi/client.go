@@ -30,6 +30,12 @@ func New(addr string) *Client {
 	}
 }
 
+func NewWithSecret(addr, secret string) *Client {
+	cli := New(addr)
+	cli.Secret = secret
+	return cli
+}
+
 func (c *Client) do(method, path string, body any) ([]byte, error) {
 	var rdr io.Reader
 	if body != nil {

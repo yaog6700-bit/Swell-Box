@@ -57,12 +57,26 @@ func LogsDir() (string, error) {
 	return filepath.Join(dir, "logs"), nil
 }
 
+const (
+	EngineSingBox = "sing-box"
+	EngineShoes   = "shoes"
+)
+
 // CoreBinaryName is the expected sing-box executable name on this OS.
 func CoreBinaryName() string {
-	if runtime.GOOS == "windows" {
-		return "sing-box.exe"
+	return CoreBinaryNameFor(EngineSingBox)
+}
+
+// CoreBinaryNameFor returns the binary name for the specified engine.
+func CoreBinaryNameFor(engine string) string {
+	base := "sing-box"
+	if engine == EngineShoes {
+		base = "shoes"
 	}
-	return "sing-box"
+	if runtime.GOOS == "windows" {
+		return base + ".exe"
+	}
+	return base
 }
 
 // DashboardURL is the official sing-box dashboard endpoint.
@@ -71,6 +85,17 @@ func DashboardURL(port int) string {
 		port = DefaultPort
 	}
 	return "http://127.0.0.1:" + itoa(port) + "/dashboard/"
+}
+
+// ZashboardURL is the web Zashboard endpoint configured for shoes Clash API.
+func ZashboardURL(port int, secret string) string {
+	if port <= 0 {
+		port = 9090
+	}
+	if secret == "" {
+		secret = "swellbox"
+	}
+	return "https://board.zash.run/#/setup?hostname=127.0.0.1&port=" + itoa(port) + "&secret=" + secret
 }
 
 func itoa(n int) string {
