@@ -50,7 +50,7 @@ type CoreInfo struct {
 // Repositories for core engines.
 const (
 	SingBoxRepo = "SagerNet/sing-box"
-	ShoesRepo   = "mateo-ki/shoes"
+	ShoesRepo   = "yaog6700-bit/shoes"
 )
 
 // CheckCore queries GitHub for sing-box matching this OS/arch.

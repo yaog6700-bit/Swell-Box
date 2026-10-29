@@ -2,7 +2,7 @@
 
 **Swell-Box** 是一款轻量、现代且易用的跨平台系统托盘代理客户端，原生支持 **sing-box** 与 **Shoes** 双核心架构，并内置完全离线的本地控制面板。
 
-**Swell-Box** is a lightweight, modern cross-platform system-tray proxy client powered by a dual-engine architecture ([sing-box](https://github.com/SagerNet/sing-box) & [shoes](https://github.com/mateo-ki/shoes)), featuring an integrated offline dashboard.
+**Swell-Box** is a lightweight, modern cross-platform system-tray proxy client powered by a dual-engine architecture ([sing-box](https://github.com/SagerNet/sing-box) & [shoes](https://github.com/yaog6700-bit/shoes)), featuring an integrated offline dashboard.
 
 **Repository:** [github.com/yaog6700-bit/Swell-Box](https://github.com/yaog6700-bit/Swell-Box)  
 **Binary:** `Swell-Box` / `Swell-Box.exe`
@@ -18,7 +18,7 @@
 
 ### 1. 🚀 双核心自由切换 (Dual-Core Engine)
 - **多核心无缝切换**：在托盘菜单中即可随时在 **sing-box** 与 **Shoes** 之间一键平滑切换，无需手动修改复杂配置。
-- **Shoes (Rust) 内核深度集成**：支持基于 Rust 的高性能多协议代理引擎 [mateo-ki/shoes](https://github.com/mateo-ki/shoes)，具备极佳的内存占用与并发性能。
+- **Shoes (Rust) 内核深度集成**：支持基于 Rust 的高性能多协议代理引擎 [yaog6700-bit/shoes](https://github.com/yaog6700-bit/shoes)（Fork 自 [cfal/shoes](https://github.com/cfal/shoes)），具备极佳的内存占用与并发性能。
 - **配置智能无缝转译**：基于 sing-box JSON 格式自动转译生成 Shoes 专用的 YAML 运行态配置，节点和路由策略保持同步。
 - **适配 Shoes 0.3.5+ 规范与自动自愈**：
   - 适配 Shoes 0.3.5+ 全新分组规范（`type: selector`），并在启动检查中内置双向版本自愈重试机制，无缝兼容新旧版本。
@@ -91,7 +91,7 @@ GOOS=linux   GOARCH=amd64 CGO_ENABLED=1 go build -ldflags "-s -w" -o dist/Swell-
 
 - 🌟 **[daodao97/SingBoxClient](https://github.com/daodao97/SingBoxClient)**：感谢原项目作者 [daodao97](https://github.com/daodao97) 提供的开创性工作与坚实基础。
 - 📦 **[SagerNet/sing-box](https://github.com/SagerNet/sing-box)**：感谢 sing-box 官方团队打造的高性能通用通用代理平台。
-- 👟 **[mateo-ki/shoes](https://github.com/mateo-ki/shoes) / [cfal/shoes](https://github.com/cfal/shoes)**：感谢作者提供的高性能 Rust 多协议代理引擎。
+- 👟 **[cfal/shoes](https://github.com/cfal/shoes) / [yaog6700-bit/shoes](https://github.com/yaog6700-bit/shoes)**：感谢作者提供的高性能 Rust 多协议代理引擎。
 
 ---
 
